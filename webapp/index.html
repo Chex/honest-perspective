@@ -117,7 +117,7 @@
       pointer-events: none;
       transition: opacity 220ms;
       z-index: 8;
-      letter-spacing: 0.3px;
+      letter-spacing: 0;
     }
     .stage.busy .busy-veil { opacity: 1; }
 
@@ -138,6 +138,11 @@
       border: 2px dashed transparent;
     }
 
+    .dropzone:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+    }
+
     .dropzone:hover,
     .dropzone.dragover {
       background: rgba(255, 159, 67, 0.04);
@@ -149,21 +154,29 @@
       font-size: 22px;
       font-weight: 700;
       color: var(--text);
-      letter-spacing: 0.2px;
+      letter-spacing: 0;
     }
 
     .dropzone .tagline {
       font-size: 13px;
       color: var(--text-dim);
       text-align: center;
-      max-width: 340px;
+      max-width: 420px;
       line-height: 1.5;
       margin: -8px 24px 12px;
     }
 
-    .dropzone .icon {
-      font-size: 56px;
-      opacity: 0.5;
+    .dropzone .drop-icon {
+      color: var(--text-dim);
+      line-height: 0;
+      opacity: 0.72;
+      transition: color 140ms, opacity 140ms;
+    }
+
+    .dropzone:hover .drop-icon,
+    .dropzone.dragover .drop-icon {
+      color: var(--accent);
+      opacity: 1;
     }
 
     .dropzone .primary {
@@ -174,7 +187,7 @@
 
     .dropzone .hint {
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.35);
+      color: rgba(255, 255, 255, 0.5);
     }
 
     .dropzone input {
@@ -233,6 +246,20 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+    }
+
+    .info-pill #statusText {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .info-pill .menu-chevron {
+      width: 15px;
+      height: 15px;
+      color: var(--text-dim);
+      flex-shrink: 0;
     }
 
     .info-pill:hover {
@@ -309,7 +336,7 @@
     .round-btn.peek {
       font-size: 11px;
       font-weight: 600;
-      letter-spacing: 0.5px;
+      letter-spacing: 0;
     }
 
     .round-btn.peek.pressing {
@@ -389,6 +416,30 @@
       font-size: 12px;
       color: var(--text-dim);
       font-variant-numeric: tabular-nums;
+      max-width: 55vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .menu-item .trailing {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .menu-item .menu-check {
+      display: none;
+      width: 17px;
+      height: 17px;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .menu-item.current .menu-check {
+      display: block;
     }
     .menu-item .meta.warn {
       color: rgba(239, 68, 68, 0.85);
@@ -396,6 +447,23 @@
     .menu-item.current .meta {
       color: var(--accent);
       font-weight: 600;
+    }
+
+    .ui-icon {
+      width: 20px;
+      height: 20px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .drop-icon .ui-icon {
+      width: 44px;
+      height: 44px;
+      stroke-width: 1.6;
     }
 
     .menu-divider {
@@ -450,12 +518,35 @@
 
 <body>
 
+  <!-- Shared, offline-safe action icons using the Lucide stroke language. -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="icon-image-plus" viewBox="0 0 24 24">
+      <path d="M16 5h6M19 2v6" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
+      <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+      <circle cx="9" cy="9" r="2" />
+    </symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+    </symbol>
+    <symbol id="icon-chevron-down" viewBox="0 0 24 24">
+      <path d="m6 9 6 6 6-6" />
+    </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24">
+      <path d="M20 6 9 17l-5-5" />
+    </symbol>
+  </svg>
+
   <!-- Drop zone -->
-  <label class="dropzone" id="dropzone">
+  <label class="dropzone" id="dropzone" role="button" tabindex="0">
     <div class="brand">Honest Perspective</div>
-    <div class="tagline">Crop-only perspective correction — every output pixel comes from your photo. Auto-corrects when it's sure; drag to re-aim the camera yourself.</div>
-    <div class="icon">↓</div>
-    <div class="primary">Drop a photo, or tap to choose</div>
+    <div class="tagline">Crop-only correction. No generated fill. No forced guesses.</div>
+    <div class="drop-icon" aria-hidden="true"><svg class="ui-icon"><use href="#icon-image-plus" /></svg></div>
+    <div class="primary">Drop a photo or choose one</div>
     <div class="hint">JPG · HEIC · PNG</div>
     <input type="file" id="fileInput" accept="image/jpeg,image/png,image/heic,image/heif">
   </label>
@@ -476,45 +567,52 @@
 
   <div class="bottom-bar" id="bottomBar" hidden>
     <div class="bottom-controls">
-      <button class="round-btn" id="newImgBtn" title="Open another photo">+</button>
+      <button class="round-btn" id="newImgBtn" title="Open another photo" aria-label="Open another photo">
+        <svg class="ui-icon" aria-hidden="true"><use href="#icon-image-plus" /></svg>
+      </button>
       <button class="info-pill" id="statusPill" type="button" title="Choose correction mode">
         <span id="statusText">Waiting for detection…</span>
+        <svg class="ui-icon menu-chevron" aria-hidden="true"><use href="#icon-chevron-down" /></svg>
       </button>
       <button class="round-btn peek" id="peekBtn" title="Hold to show the original" aria-label="Hold to show the original">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg class="ui-icon" aria-hidden="true"><use href="#icon-eye" /></svg>
       </button>
-      <button class="round-btn primary" id="saveBtn" title="Save">↓</button>
+      <button class="round-btn primary" id="saveBtn" title="Save" aria-label="Save">
+        <svg class="ui-icon" aria-hidden="true"><use href="#icon-download" /></svg>
+      </button>
     </div>
   </div>
 
-  <div class="menu-backdrop" id="menuBackdrop"></div>
-  <div class="menu-sheet" id="menuSheet" role="dialog" aria-label="Choose correction mode">
-    <button class="menu-item" id="menuAuto" data-mode="auto">
+  <div class="menu-backdrop" id="menuBackdrop" hidden></div>
+  <div class="menu-sheet" id="menuSheet" role="dialog" aria-modal="true" aria-label="Choose correction mode" aria-hidden="true" inert hidden>
+    <button class="menu-item" id="menuAuto" data-mode="auto" aria-pressed="false">
       <span>Auto correction</span>
-      <span class="meta" data-meta="auto"></span>
+      <span class="trailing"><span class="meta" data-meta="auto"></span><svg class="ui-icon menu-check" aria-hidden="true"><use href="#icon-check" /></svg></span>
     </button>
     <div class="menu-divider"></div>
-    <button class="menu-item" id="menuNone" data-mode="none">
+    <button class="menu-item" id="menuNone" data-mode="none" aria-pressed="false">
       <span>No correction</span>
-      <span class="meta" data-meta="none"></span>
+      <span class="trailing"><span class="meta" data-meta="none"></span><svg class="ui-icon menu-check" aria-hidden="true"><use href="#icon-check" /></svg></span>
     </button>
-    <button class="menu-item" id="menuBoth" data-mode="both">
+    <button class="menu-item" id="menuBoth" data-mode="both" aria-pressed="false">
       <span>Full correction</span>
-      <span class="meta" data-meta="both"></span>
+      <span class="trailing"><span class="meta" data-meta="both"></span><svg class="ui-icon menu-check" aria-hidden="true"><use href="#icon-check" /></svg></span>
     </button>
-    <button class="menu-item" id="menuVertical" data-mode="vertical">
+    <button class="menu-item" id="menuVertical" data-mode="vertical" aria-pressed="false">
       <span>Vertical correction</span>
-      <span class="meta" data-meta="vertical"></span>
+      <span class="trailing"><span class="meta" data-meta="vertical"></span><svg class="ui-icon menu-check" aria-hidden="true"><use href="#icon-check" /></svg></span>
     </button>
-    <button class="menu-item" id="menuHorizontal" data-mode="horizontal">
+    <button class="menu-item" id="menuHorizontal" data-mode="horizontal" aria-pressed="false">
       <span>Horizontal correction</span>
-      <span class="meta" data-meta="horizontal"></span>
+      <span class="trailing"><span class="meta" data-meta="horizontal"></span><svg class="ui-icon menu-check" aria-hidden="true"><use href="#icon-check" /></svg></span>
     </button>
   </div>
 
   <div class="toast" id="toast"></div>
 
-  <script src="/geometry.js"></script>
+  <!-- Relative path so the page works both behind the FastAPI server and on
+       a static host (GitHub Pages serves the repo under a sub-path). -->
+  <script src="geometry.js"></script>
   <script>
     (() => {
 
@@ -536,10 +634,11 @@
       let lastPhysics = null;         // frontend diagnostics for comparing with /validate
       let busy = false;
       let dragHintShown = false;      // one drag-gesture hint per page load
+      let staticMode = false;         // no backend reachable → manual-only demo
       const Geometry = window.PerspectiveGeometry;
 
       const MODE_LABEL = {
-        none: 'No correction',
+        none: 'Original',
         both: 'Full',
         vertical: 'Vertical',
         horizontal: 'Horizontal',
@@ -609,14 +708,14 @@
       // statusPill text — reflects the latest SETTLED detect result. Never
       // shows "detecting" itself; that's the veil's job (see setBusy).
       // `state`: 'success' | 'failed'.
-      function setStatus(state, mode) {
+      function setStatus(state, mode, isAuto = true) {
         statusPill.classList.remove('warn');
         if (state === 'success') {
           const label = MODE_LABEL[mode] || mode || '';
           if (mode === 'none') {
-            statusText.innerHTML = `<span class="mode">${label}</span> · original kept`;
+            statusText.innerHTML = `<span class="mode">${label}</span>`;
           } else {
-            statusText.innerHTML = `Auto-corrected: <span class="mode">${label}</span>`;
+            statusText.innerHTML = `${isAuto ? 'Auto · ' : ''}<span class="mode">${label}</span>`;
           }
         } else {
           // Detection is deterministic (seeded RANSAC) — re-running on the
@@ -624,7 +723,7 @@
           // "click to retry", point the user to the only thing that
           // actually moves forward: dragging the image manually.
           statusPill.classList.add('warn');
-          statusText.innerHTML = `<span class="mode">Nothing detected</span> · drag to adjust`;
+          statusText.innerHTML = `<span class="mode">No auto result</span>`;
         }
       }
 
@@ -1044,6 +1143,11 @@
         const f = e.target.files[0];
         if (f) loadFile(f);
       });
+      dropzone.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        fileInput.click();
+      });
       ['dragenter', 'dragover'].forEach(ev =>
         dropzone.addEventListener(ev, (e) => {
           e.preventDefault();
@@ -1162,7 +1266,36 @@
       // ──────────────────────────────────────────────────────────
       // BACKEND CALLS
       // ──────────────────────────────────────────────────────────
+      // Backend-less initialization: identity rotation, max(w,h) focal
+      // fallback (same convention as geometry.make_intrinsics), full-frame
+      // corners for the drag path. Everything the drag + WebGL-export flow
+      // needs, nothing the menu/auto flow wants.
+      function enterManualOnly() {
+        staticMode = true;
+        const [w, h] = sourceImgDims;
+        const f = Math.max(w, h);
+        imageIntrinsics = { fx: f, fy: f, cx: w / 2, cy: h / 2, source: 'fallback_max_dim' };
+        correctionState = Geometry.makeState(
+          [1, 0, 0, 0, 1, 0, 0, 0, 1], imageIntrinsics, sourceImgDims
+        );
+        detectedState = null;
+        sourceCorners = [[0, 0], [w, 0], [w, h], [0, h]];
+        detectedCorners = null;
+        alternatives = null;
+        chosenMode = null;
+        appliedMode = null;
+        objectAspect = w / h;
+        statusPill.classList.remove('warn');
+        statusText.innerHTML = '<span class="mode">Demo</span> · manual only';
+        redraw();
+        if (!dragHintShown) {
+          dragHintShown = true;
+          toast('No backend here, so auto mode is off. Drag to re-aim the camera.', 3200);
+        }
+      }
+
       async function runDetect() {
+        if (staticMode) { enterManualOnly(); return; }
         setBusy(true, 'Detecting…');
         try {
           const fd = new FormData();
@@ -1208,6 +1341,14 @@
             toast('Drag anywhere on the photo to re-aim the camera', 2600);
           }
         } catch (e) {
+          // Backend absent entirely (GitHub Pages demo, file://, forgotten
+          // server): fetch rejects with TypeError, or a static host rejects
+          // the POST — 404/405 (Pages) or 501 (python -m http.server).
+          // Distinct from a real backend failing mid-detect.
+          if (e instanceof TypeError || /^HTTP (404|405|501)$/.test(e.message)) {
+            enterManualOnly();
+            return;
+          }
           setStatus('failed');
           toast(`Detection failed: ${e.message}`);
         } finally {
@@ -1216,6 +1357,7 @@
       }
 
       async function runSave() {
+        if (staticMode) return runExportInBrowser();
         if (!currentFile || !sourceCorners) return;
         setBusy(true, 'Rendering…');
         try {
@@ -1231,38 +1373,44 @@
           const r = await fetch('/warp', { method: 'POST', body: fd });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const blob = await r.blob();
-          const stem = currentFile.name.replace(/\.[^.]+$/, '');
-          const filename = `${stem}_fixed.jpg`;
-          const fileObj = new File([blob], filename, { type: 'image/jpeg' });
-
-          // On iOS only, route through navigator.share — opens the system
-          // share sheet where the user can pick "Save to Photos". Desktop Safari
-          // also implements Web Share, but there it would yield an action
-          // menu instead of a plain download, which is the opposite of what
-          // a desktop user wants. So UA-gate the share path to iOS.
-          //
-          // Caveat: navigator.share on iOS requires a secure context. On a
-          // LAN deployment served over plain HTTP (http://192.168.x.x:8000),
-          // canShare returns false and we fall back to download — which on
-          // iOS Safari opens "Save to Files" instead of "Save to Photos". Real fix
-          // is HTTPS (self-signed cert + trust on device); deferred.
-          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
-          if (isIOS && navigator.canShare && navigator.canShare({ files: [fileObj] })) {
-            try {
-              await navigator.share({ files: [fileObj] });
-              // user completed or cancelled the share — both are fine
-            } catch (e) {
-              if (e.name === 'AbortError') return;
-              downloadBlob(blob, filename);
-            }
-          } else {
-            downloadBlob(blob, filename);
-          }
+          await deliverBlob(blob, saveFilename());
         } catch (e) {
           toast(`Save failed: ${e.message}`);
         } finally {
           setBusy(false);
+        }
+      }
+
+      function saveFilename() {
+        const stem = currentFile.name.replace(/\.[^.]+$/, '');
+        return `${stem}_fixed.jpg`;
+      }
+
+      // On iOS only, route through navigator.share — opens the system
+      // share sheet where the user can pick "Save to Photos". Desktop Safari
+      // also implements Web Share, but there it would yield an action
+      // menu instead of a plain download, which is the opposite of what
+      // a desktop user wants. So UA-gate the share path to iOS.
+      //
+      // Caveat: navigator.share on iOS requires a secure context. On a
+      // LAN deployment served over plain HTTP (http://192.168.x.x:8000),
+      // canShare returns false and we fall back to download — which on
+      // iOS Safari opens "Save to Files" instead of "Save to Photos". The
+      // HTTPS GitHub Pages demo gets the real share sheet.
+      async function deliverBlob(blob, filename) {
+        const fileObj = new File([blob], filename, { type: 'image/jpeg' });
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+        if (isIOS && navigator.canShare && navigator.canShare({ files: [fileObj] })) {
+          try {
+            await navigator.share({ files: [fileObj] });
+            // user completed or cancelled the share — both are fine
+          } catch (e) {
+            if (e.name === 'AbortError') return;
+            downloadBlob(blob, filename);
+          }
+        } else {
+          downloadBlob(blob, filename);
         }
       }
 
@@ -1278,12 +1426,167 @@
         toast('Downloaded');
       }
 
+      // ──────────────────────────────────────────────────────────
+      // STATIC-MODE EXPORT — with no backend, /warp is replaced by a WebGL
+      // render of the exact view matrix the preview shows, at full source
+      // resolution. Demo trade-offs vs the backend path: output is untagged
+      // sRGB with no EXIF/ICC, and sources beyond the GPU texture limit are
+      // downscaled to fit.
+      // ──────────────────────────────────────────────────────────
+      async function runExportInBrowser() {
+        if (!currentFile || !correctionState || !sourceImgDims) return;
+        setBusy(true, 'Rendering…');
+        let bitmap = null, imgUrl = null;
+        try {
+          let source;
+          try {
+            source = bitmap = await createImageBitmap(currentFile);
+          } catch {
+            // Some browsers <img>-decode formats createImageBitmap rejects
+            // (e.g. HEIC in Safari). decode() yields full natural size.
+            imgUrl = URL.createObjectURL(currentFile);
+            const img = new Image();
+            img.src = imgUrl;
+            await img.decode();
+            source = img;
+          }
+          const blob = await warpInBrowser(source, correctionState);
+          await deliverBlob(blob, saveFilename());
+        } catch (e) {
+          toast(`Save failed: ${e.message}`);
+        } finally {
+          if (bitmap) bitmap.close();
+          if (imgUrl) URL.revokeObjectURL(imgUrl);
+          setBusy(false);
+        }
+      }
+
+      function warpInBrowser(source, state) {
+        const [nw, nh] = sourceImgDims;
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl', {
+          preserveDrawingBuffer: true, premultipliedAlpha: false, antialias: false,
+        });
+        if (!gl) throw new Error('WebGL is unavailable in this browser');
+        const maxDim = Math.min(
+          gl.getParameter(gl.MAX_TEXTURE_SIZE),
+          gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)
+        );
+        const scale = Math.min(1, maxDim / Math.max(nw, nh));
+        const w = Math.round(nw * scale), h = Math.round(nh * scale);
+        if (scale < 1) {
+          toast(`Image exceeds this GPU's texture limit — exported at ${w}×${h}`, 3200);
+        }
+        canvas.width = w;
+        canvas.height = h;
+
+        // The state lives in source pixel space; recompute the view at export
+        // scale exactly like scaledStateView does for the display.
+        const intrinsics = {
+          ...state.intrinsics,
+          fx: state.intrinsics.fx * scale, fy: state.intrinsics.fy * scale,
+          cx: state.intrinsics.cx * scale, cy: state.intrinsics.cy * scale,
+        };
+        const crop = state.crop ? state.crop.map(v => v * scale) : null;
+        const view = Geometry.computeView(state.rotation, intrinsics, [w, h], crop);
+        const inv = mat3Inverse(view.matrix);
+        if (!inv) throw new Error('view matrix is singular');
+
+        // Fragment shader maps each output pixel back through the inverse
+        // homography (projective divide per pixel) and bilinearly samples
+        // the source texture.
+        const vert = `
+attribute vec2 aPos;
+varying vec2 vOut;
+uniform vec2 uOutSize;
+void main() {
+  gl_Position = vec4(aPos, 0.0, 1.0);
+  vOut = (aPos * vec2(0.5, -0.5) + 0.5) * uOutSize;
+}`;
+        const frag = `
+precision highp float;
+varying vec2 vOut;
+uniform mat3 uInv;
+uniform vec2 uSrcSize;
+uniform sampler2D uTex;
+void main() {
+  vec3 s = uInv * vec3(vOut, 1.0);
+  gl_FragColor = texture2D(uTex, (s.xy / s.z) / uSrcSize);
+}`;
+        function compileShader(type, src) {
+          const sh = gl.createShader(type);
+          gl.shaderSource(sh, src);
+          gl.compileShader(sh);
+          if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+            throw new Error(gl.getShaderInfoLog(sh) || 'shader compile failed');
+          }
+          return sh;
+        }
+        const prog = gl.createProgram();
+        gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vert));
+        gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, frag));
+        gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+          throw new Error('shader link failed');
+        }
+        gl.useProgram(prog);
+
+        const buf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        const loc = gl.getAttribLocation(prog, 'aPos');
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+        // Oversized sources are pre-downscaled on a 2D canvas so the texture
+        // fits; intrinsics/crop above are already in the same scaled space.
+        let texSource = source;
+        if (scale < 1) {
+          const tmp = document.createElement('canvas');
+          tmp.width = w;
+          tmp.height = h;
+          const ctx = tmp.getContext('2d');
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(source, 0, 0, w, h);
+          texSource = tmp;
+        }
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texSource);
+
+        // uniformMatrix3fv expects column-major; our matrices are row-major.
+        gl.uniformMatrix3fv(gl.getUniformLocation(prog, 'uInv'), false, [
+          inv[0], inv[3], inv[6],
+          inv[1], inv[4], inv[7],
+          inv[2], inv[5], inv[8],
+        ]);
+        gl.uniform2f(gl.getUniformLocation(prog, 'uOutSize'), w, h);
+        gl.uniform2f(gl.getUniformLocation(prog, 'uSrcSize'), w, h);
+        gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
+
+        gl.viewport(0, 0, w, h);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        return new Promise((resolve, reject) => {
+          canvas.toBlob(
+            (blob) => blob ? resolve(blob) : reject(new Error('JPEG encoding failed')),
+            'image/jpeg', 0.95
+          );
+        });
+      }
+
       function redraw() {
         computeDisplaySize();
         applyMatrix3d();
       }
 
       async function validateCurrentCorners() {
+        if (staticMode) return;  // diagnostic-only; frontend math is authoritative here
         if ((!sourceCorners && !correctionState) || !sourceImgDims) return;
         try {
           const fd = new FormData();
@@ -1423,8 +1726,8 @@
         }
         activePointerId = null;
         // Drag ended → pill is no longer on any auto/menu mode. Show
-        // neutral metrics ("tilt X°") instead of the misleading
-        // "Auto-corrected: X" text that implied a specific mode is active.
+        // neutral metrics ("Manual · X°") instead of an auto-mode label
+        // that would imply a specific preset is still active.
         // The pill stays clickable to invite re-opening the menu.
         updatePillForManualState();
         validateCurrentCorners();
@@ -1438,9 +1741,9 @@
         statusPill.classList.remove('warn');
         if (lastPhysics && lastPhysics.theta_deg != null) {
           const theta = lastPhysics.theta_deg.toFixed(1);
-          statusText.innerHTML = `Manual · <span class="mode">tilt ${theta}°</span>`;
+          statusText.innerHTML = `Manual · <span class="mode">${theta}°</span>`;
         } else {
-          statusText.textContent = 'Manual adjustment';
+          statusText.textContent = 'Manual';
         }
       }
       imageTarget.addEventListener('pointerup', endDrag);
@@ -1456,6 +1759,7 @@
       // option is instant — no server roundtrip.
       const menuBackdrop = document.getElementById('menuBackdrop');
       const menuSheet = document.getElementById('menuSheet');
+      let closeMenuTimer = null;
       const menuItems = {
         auto:       document.getElementById('menuAuto'),
         none:       document.getElementById('menuNone'),
@@ -1465,6 +1769,7 @@
       };
 
       function openMenu() {
+        if (closeMenuTimer) clearTimeout(closeMenuTimer);
         // Build per-item state from the cached alternatives + applied mode.
         for (const mode of ['none', 'both', 'vertical', 'horizontal']) {
           const item = menuItems[mode];
@@ -1473,6 +1778,7 @@
           // Default: disabled, no meta text
           item.disabled = true;
           item.classList.remove('current');
+          item.setAttribute('aria-pressed', 'false');
           metaEl.textContent = '';
           metaEl.classList.remove('warn');
           if (!alt) continue;
@@ -1482,12 +1788,12 @@
             metaEl.classList.add('warn');
             continue;
           }
-          // Viable — enable, show area %, mark current if user has applied it
+          // Viable — show retained source area and mark the active preset.
           item.disabled = false;
-          metaEl.textContent = `${(alt.area_ratio * 100).toFixed(1)}%`;
+          metaEl.textContent = `${Math.round(alt.area_ratio * 100)}% kept`;
           if (mode === appliedMode) {
             item.classList.add('current');
-            metaEl.textContent += ' · current';
+            item.setAttribute('aria-pressed', 'true');
           }
         }
         // "Auto" item: enabled iff we have a detected winner; marked current
@@ -1496,17 +1802,36 @@
         const autoItem = menuItems.auto;
         autoItem.disabled = !detectedCorners;
         autoItem.classList.toggle('current', appliedMode === 'auto');
+        autoItem.setAttribute('aria-pressed', String(appliedMode === 'auto'));
         const autoMeta = autoItem.querySelector('[data-meta]');
         autoMeta.classList.remove('warn');
         autoMeta.textContent = (appliedMode === 'auto' && chosenMode)
-          ? `${MODE_LABEL[chosenMode] || chosenMode} · current`
+          ? `${MODE_LABEL[chosenMode] || chosenMode}`
           : '';
+        menuSheet.inert = false;
+        menuSheet.setAttribute('aria-hidden', 'false');
+        menuSheet.hidden = false;
+        menuBackdrop.hidden = false;
+        // Flush the hidden state so the sheet transitions in rather than
+        // appearing at its final position in the first painted frame.
+        void menuSheet.offsetHeight;
         menuSheet.classList.add('open');
         menuBackdrop.classList.add('open');
+        const focusTarget = menuSheet.querySelector('.current:not(:disabled)') ||
+          menuSheet.querySelector('button:not(:disabled)');
+        if (focusTarget) focusTarget.focus();
       }
       function closeMenu() {
         menuSheet.classList.remove('open');
         menuBackdrop.classList.remove('open');
+        menuSheet.inert = true;
+        menuSheet.setAttribute('aria-hidden', 'true');
+        statusPill.focus();
+        closeMenuTimer = setTimeout(() => {
+          menuSheet.hidden = true;
+          menuBackdrop.hidden = true;
+          closeMenuTimer = null;
+        }, 240);
       }
 
       function applyMode(mode) {
@@ -1539,14 +1864,21 @@
         statusPill.classList.remove('flash');
         void statusPill.offsetWidth;
         statusPill.classList.add('flash');
-        if (labelMode) setStatus('success', labelMode);
+        if (labelMode) setStatus('success', labelMode, mode === 'auto');
       }
 
       statusPill.addEventListener('click', () => {
         if (busy) return;
+        if (staticMode) {
+          toast('Auto correction needs the local backend — see the README to run it');
+          return;
+        }
         openMenu();
       });
       menuBackdrop.addEventListener('click', closeMenu);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && menuSheet.classList.contains('open')) closeMenu();
+      });
       for (const [mode, item] of Object.entries(menuItems)) {
         item.addEventListener('click', () => {
           if (item.disabled) return;

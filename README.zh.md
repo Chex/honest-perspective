@@ -63,6 +63,20 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 
 支持 JPG / PNG / **HEIC**（iPhone "高效率"格式，服务端通过 `pillow-heif` 解码；Safari 17+ 能原生预览，其他浏览器预览失败但服务端处理无问题）。
 
+### 托管 demo（GitHub Pages）
+
+前端在探测不到后端时会优雅降级为"仅手动"demo 模式：保存不再调用 `/warp`，改由浏览器内 WebGL 渲染同一个视图矩阵。GitHub Pages 上跑的就是这个模式——照片全程不离开设备。`.github/workflows/pages.yml` 会在每次 push 到 `main` 时发布 `webapp/`（仓库 Settings → Pages → Source 选 GitHub Actions）。
+
+demo 模式相对本地后端的取舍：
+
+- 没有自动校正（LSD / RANSAC / 重力先验都在 Python 侧）
+- 焦距 fallback 到 `max(w, h)`——浏览器端暂不解析 EXIF
+- 导出的 JPEG 是无 ICC 标签的 sRGB，不保留 EXIF
+- HEIC 只在能原生解码的浏览器（Safari）可用
+- 超过 GPU 纹理上限的图会被降采样
+
+demo 反而比纯 HTTP 局域网部署强一点：它是 HTTPS，iOS 的分享菜单（"存储到照片"）真的能用。
+
 ### 交互
 
 - 拖入照片 / 点击选择 → 服务端一次提取线段和 VP，生成无需调整/垂直/水平/全面四个候选；只有线条真的改善且源像素保留足够多时才自动应用

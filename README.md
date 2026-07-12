@@ -65,6 +65,20 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 
 Supports JPG / PNG / **HEIC** (iPhone's "High Efficiency" format, decoded server-side via `pillow-heif`; Safari 17+ previews it natively, other browsers can't preview but processing works fine).
 
+### Hosted demo (GitHub Pages)
+
+The frontend degrades gracefully when no backend is reachable: it switches to a manual-only demo mode where Save renders the correction with WebGL in the browser instead of calling `/warp`. That is what the GitHub Pages demo runs — photos never leave your device. `.github/workflows/pages.yml` publishes `webapp/` on every push to `main` (repo Settings → Pages → Source: GitHub Actions).
+
+Demo-mode trade-offs vs the local backend:
+
+- no auto correction (LSD / RANSAC / the gravity prior live in Python)
+- focal length falls back to `max(w, h)` — no EXIF parsing in the browser yet
+- the exported JPEG is untagged sRGB and carries no EXIF/ICC
+- HEIC only works in browsers that decode it natively (Safari)
+- images beyond the GPU texture limit are downscaled to fit
+
+One thing the demo does *better* than the plain-HTTP LAN setup: it is served over HTTPS, so the iOS share sheet ("Save to Photos") actually works.
+
 ### Interaction
 
 - Drop or pick a photo → the server extracts line segments and vanishing points once, builds four candidates (no-change / vertical / horizontal / both), and only auto-applies one when the lines measurably improve and enough source pixels survive the crop
