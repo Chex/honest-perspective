@@ -613,6 +613,7 @@
   <!-- Relative path so the page works both behind the FastAPI server and on
        a static host (GitHub Pages serves the repo under a sub-path). -->
   <script src="geometry.js"></script>
+  <script src="runtime.js"></script>
   <script>
     (() => {
 
@@ -634,8 +635,11 @@
       let lastPhysics = null;         // frontend diagnostics for comparing with /validate
       let busy = false;
       let dragHintShown = false;      // one drag-gesture hint per page load
-      let staticMode = false;         // no backend reachable → manual-only demo
+      // Known static hosts skip the backend probe; other hosts can still
+      // switch to manual-only mode when the probe shows no API is present.
+      let staticMode = window.PerspectiveRuntime.isStaticHostingLocation(window.location);
       const Geometry = window.PerspectiveGeometry;
+      const Runtime = window.PerspectiveRuntime;
 
       const MODE_LABEL = {
         none: 'Original',
@@ -1175,11 +1179,20 @@
         const srcUrl = URL.createObjectURL(file);
         const img = new Image();
         img.src = srcUrl;
-        try {
-          await (img.decode ? img.decode() : new Promise((res, rej) => {
-            img.onload = res; img.onerror = rej;
-          }));
-        } catch {
+        // Don't trust a decode() rejection alone: WebKit has been observed
+        // rejecting decode() for images it can still render (HEIC). Fall
+        // back to load events / naturalWidth before declaring failure.
+        const decoded = await (async () => {
+          if (img.decode) {
+            try { await img.decode(); return true; } catch { }
+          }
+          if (img.complete) return img.naturalWidth > 0;
+          return new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
+          });
+        })();
+        if (!decoded) {
           URL.revokeObjectURL(srcUrl);
           return null;
         }
@@ -1210,6 +1223,37 @@
         });
       }
 
+      // Fallback preview rendered by POST /preview (same decode path as
+      // /detect and /warp). Returns the same shape as makePreviewURL, with
+      // naturalSize taken from the X-Image-* headers (the JPEG itself is
+      // downscaled).
+      async function makeServerPreviewURL(file) {
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+          const r = await fetch('/preview', { method: 'POST', body: fd });
+          if (!r.ok) return null;
+          const w = Number(r.headers.get('X-Image-Width'));
+          const h = Number(r.headers.get('X-Image-Height'));
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          const img = new Image();
+          img.src = url;
+          try {
+            await img.decode();
+          } catch {
+            URL.revokeObjectURL(url);
+            return null;
+          }
+          return {
+            url,
+            naturalSize: (w > 0 && h > 0) ? [w, h] : [img.naturalWidth, img.naturalHeight],
+          };
+        } catch {
+          return null;
+        }
+      }
+
       let lastPreviewURL = null;
 
       async function loadFile(file) {
@@ -1225,9 +1269,13 @@
         detectedState = null;
         imageIntrinsics = null;
         if (lastPreviewURL) URL.revokeObjectURL(lastPreviewURL);
-        const result = await makePreviewURL(file);
+        let result = await makePreviewURL(file);
+        // Browser can't decode it (e.g. HEIC outside Safari) → the backend
+        // can. Only the on-screen preview uses the server render; the
+        // original file still goes to /warp untouched.
+        if (!result && !staticMode) result = await makeServerPreviewURL(file);
         if (!result) {
-          toast("This browser can't preview this format. Try Safari, or use JPG/PNG.", 4000);
+          toast("This browser can't preview this format. Try JPG/PNG, or run the local backend.", 4000);
           return;
         }
         lastPreviewURL = result.url;
@@ -1303,6 +1351,12 @@
           // mode omitted → server defaults to "auto" (try both/vertical/horizontal,
           // pick the one with most preserved area)
           const r = await fetch('/detect', { method: 'POST', body: fd });
+          if (Runtime.responseIndicatesMissingBackend(
+            r.status, r.headers.get('content-type')
+          )) {
+            enterManualOnly();
+            return;
+          }
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const data = await r.json();
           sourceImgDims = data.image_size;
@@ -1341,11 +1395,9 @@
             toast('Drag anywhere on the photo to re-aim the camera', 2600);
           }
         } catch (e) {
-          // Backend absent entirely (GitHub Pages demo, file://, forgotten
-          // server): fetch rejects with TypeError, or a static host rejects
-          // the POST — 404/405 (Pages) or 501 (python -m http.server).
-          // Distinct from a real backend failing mid-detect.
-          if (e instanceof TypeError || /^HTTP (404|405|501)$/.test(e.message)) {
+          // A failed fetch means there is no reachable backend. Static HTTP
+          // responses are handled above before parsing their bodies.
+          if (e instanceof TypeError) {
             enterManualOnly();
             return;
           }

@@ -63,7 +63,7 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 - Desktop: http://127.0.0.1:8000/
 - iPhone / iPad on the same Wi‑Fi: use your machine's LAN IP, e.g. `http://192.168.x.x:8000/`
 
-Supports JPG / PNG / **HEIC** (iPhone's "High Efficiency" format, decoded server-side via `pillow-heif`; Safari 17+ previews it natively, other browsers can't preview but processing works fine).
+Supports JPG / PNG / **HEIC** (iPhone's "High Efficiency" format, decoded server-side via `pillow-heif`). If the browser can't decode a format itself, the preview falls back to a server render (`POST /preview`); the full-resolution original is still what gets warped on save.
 
 ### Hosted demo (GitHub Pages)
 
@@ -81,12 +81,14 @@ One thing the demo does *better* than the plain-HTTP LAN setup: it is served ove
 
 ### Interaction
 
+With the local backend running:
+
 - Drop or pick a photo → the server extracts line segments and vanishing points once, builds four candidates (no-change / vertical / horizontal / both), and only auto-applies one when the lines measurably improve and enough source pixels survive the crop
 - The auto pick is shown by default; "no change" is a first-class candidate you can also select manually
 - **Drag** re-aims the camera: horizontal displacement is pure yaw, vertical displacement is pure pitch. A one-finger drag never introduces roll, and the same gesture means the same thing no matter where on the image it starts
 - **Hold the "original" button** to peek at the uncorrected source; release to return
-- **Save**: on desktop as a JPG download. On iOS, HTTPS enables the Web Share API and its "Save to Photos" action; the plain-HTTP LAN URL above falls back to a download, which Safari normally saves to Files. EXIF (capture time, camera, GPS, lens) and the ICC profile are preserved
-- The preview is downscaled in the browser to ~`max(viewport) × DPR` (capped at 2500px) so `matrix3d` stays at 60fps on large photos; saving always uses the full-resolution original
+- **Save**: on desktop as a JPG download. On iOS, HTTPS enables the Web Share API and its "Save to Photos" action; the plain-HTTP LAN URL above falls back to a download, which Safari normally saves to Files. The local backend preserves EXIF (capture time, camera, GPS, lens) and the ICC profile; the hosted demo has the limitations listed above
+- The preview is downscaled in the browser to ~`max(viewport) × DPR` (capped at 2500px) so `matrix3d` stays at 60fps on large photos; local-backend saves use the full-resolution original, while hosted-demo exports remain subject to the GPU texture limit
 
 ### The math behind manual correction
 

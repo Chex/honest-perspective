@@ -154,6 +154,32 @@ async def detect(
     return payload
 
 
+PREVIEW_MAX_DIM = 2500  # matches the frontend's own preview cap
+
+
+@app.post("/preview")
+async def preview(file: UploadFile = File(...)):
+    """Downscaled JPEG preview for files the browser can't decode itself
+    (e.g. HEIC outside Safari). Decoded by the same load_image path as
+    /detect and /warp, so the preview shows exactly the pixels the backend
+    operates on. The client keeps the original file for /warp.
+    """
+    data = await file.read()
+    bgr, icc, _exif = _read_upload(data)
+    h, w = bgr.shape[:2]
+    scale = min(1.0, PREVIEW_MAX_DIM / max(w, h))
+    if scale < 1.0:
+        bgr = cv2.resize(
+            bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA
+        )
+    body = _jpeg_bytes(bgr, icc=icc, quality=88)
+    return StreamingResponse(
+        io.BytesIO(body),
+        media_type="image/jpeg",
+        headers={"X-Image-Width": str(w), "X-Image-Height": str(h)},
+    )
+
+
 @app.post("/warp")
 async def warp(
     file: UploadFile = File(...),
