@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Perspective Fix</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: rgba(28, 28, 28, 0.78);
+      --text: #fff;
+      --text-dim: #888;
+      --accent: #ff9f43;
+      --handle-size: 22px;
+      --handle-hit: 48px;
+      --border: rgba(255, 255, 255, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "PingFang SC", system-ui, sans-serif;
+      font-size: 14px;
+      overflow: hidden;
+      overscroll-behavior: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* ─── STAGE ─── */
+    .stage {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+    }
+
+    .image-target {
+      position: relative;
+      overflow: hidden;
+      background: #000;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      touch-action: none;
+      cursor: grab;
+    }
+
+    .image-target.dragging {
+      cursor: grabbing;
+    }
+
+    .image-target img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform-origin: 0 0;
+      pointer-events: none;
+      -webkit-user-drag: none;
+      will-change: transform;
+    }
+
+    /* Rule-of-thirds grid — appears only during drag, gives more reference
+       lines for aligning building edges, horizons, etc. */
+    .grid-thirds {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2;
+      opacity: 0;
+      transition: opacity 120ms;
+    }
+    .grid-thirds line {
+      stroke: rgba(255, 255, 255, 0.28);
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
+    }
+    .image-target.dragging .grid-thirds { opacity: 1; }
+
+    /* Busy veil — dims the image and shows a centered spinner + label
+       during any blocking op (auto-detect on upload, /warp on save).
+       Unified visual: every "wait a moment" state looks the same. */
+    .busy-veil {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.5);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 220ms;
+      z-index: 8;
+      letter-spacing: 0.3px;
+    }
+    .stage.busy .busy-veil { opacity: 1; }
+
+    /* ─── DROP ZONE ─── */
+    .dropzone {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: var(--bg);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 140ms, color 140ms;
+      border: 2px dashed transparent;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragover {
+      background: rgba(255, 159, 67, 0.04);
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .dropzone .icon {
+      font-size: 56px;
+      opacity: 0.5;
+    }
+
+    .dropzone .primary {
+      font-size: 17px;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .dropzone .hint {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    .dropzone input {
+      display: none;
+    }
+
+    /* ─── BOTTOM BAR ─── */
+    .bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 30;
+      padding: 22px 0 max(22px, env(safe-area-inset-bottom)) 0;
+      background: linear-gradient(to top,
+          rgba(0, 0, 0, 0.75) 0%,
+          rgba(0, 0, 0, 0.4) 60%,
+          rgba(0, 0, 0, 0) 100%);
+      pointer-events: none;
+    }
+
+    .bottom-controls {
+      max-width: 768px;
+      margin: 0 auto;
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+    }
+
+    .bottom-controls>* {
+      pointer-events: auto;
+    }
+
+    .info-pill {
+      flex: 1;
+      min-height: 48px;
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-radius: 999px;
+      padding: 0 16px;
+      border: 1px solid var(--border);
+      text-align: center;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 120ms, transform 80ms;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .info-pill:hover {
+      background: rgba(40, 40, 40, 0.85);
+    }
+
+    .info-pill:active {
+      transform: scale(0.98);
+    }
+
+    .info-pill:disabled {
+      cursor: default;
+      opacity: 0.85;
+    }
+
+    .info-pill .mode {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .info-pill.warn .mode {
+      color: rgba(239, 68, 68, 0.95);
+    }
+
+    .info-pill.busy {
+      color: var(--text-dim);
+    }
+
+    /* Brief flash when user clicks the pill to revert to auto-detected
+       corners — visual ack since the underlying op (corner restore) is
+       instant and would otherwise look like nothing happened. */
+    .info-pill.flash {
+      animation: pillFlash 380ms ease-out;
+    }
+    @keyframes pillFlash {
+      0%   { background: var(--accent); border-color: var(--accent); }
+      100% { background: var(--surface); border-color: var(--border); }
+    }
+
+    .round-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: transform 80ms;
+    }
+
+    .round-btn:active {
+      transform: scale(0.92);
+    }
+
+    .round-btn.primary {
+      background: var(--accent);
+      color: #111;
+      border: none;
+      font-weight: 700;
+    }
+
+    .round-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .round-btn.peek {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .round-btn.peek.pressing {
+      background: var(--accent);
+      color: #111;
+      border-color: var(--accent);
+    }
+
+    /* While peeking: kill the matrix3d so the original (un-warped) image shows. */
+    .stage[data-peeking="true"] .image-target img {
+      transform: none !important;
+    }
+
+    /* ─── MODE MENU (bottom sheet) ─── */
+    .menu-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      background: rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 200ms;
+    }
+    .menu-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .menu-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 41;
+      max-width: 768px;
+      margin: 0 auto;
+      padding: 8px 12px max(12px, env(safe-area-inset-bottom)) 12px;
+      background: rgba(20, 20, 20, 0.94);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border);
+      border-radius: 18px 18px 0 0;
+      transform: translateY(100%);
+      transition: transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+    .menu-sheet.open {
+      transform: translateY(0);
+    }
+
+    .menu-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 15px;
+      cursor: pointer;
+      text-align: left;
+      border-radius: 10px;
+      transition: background 100ms;
+    }
+    .menu-item:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .menu-item:active:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .menu-item:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .menu-item .meta {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+    }
+    .menu-item .meta.warn {
+      color: rgba(239, 68, 68, 0.85);
+    }
+    .menu-item.current .meta {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .menu-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 12px;
+    }
+
+    /* ─── TOAST ─── */
+    .toast {
+      position: fixed;
+      top: max(20px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 60;
+      padding: 8px 14px;
+      background: var(--surface);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 200ms;
+    }
+
+    .toast.show {
+      opacity: 1;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 700ms linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Drop zone -->
+  <label class="dropzone" id="dropzone">
+    <div class="icon">↓</div>
+    <div class="primary">拖入照片，或点击选择</div>
+    <div class="hint">JPG · HEIC · PNG</div>
+    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/heic,image/heif">
+  </label>
+
+  <!-- Editor -->
+  <div class="stage" id="stage" data-peeking="false" hidden>
+    <div class="image-target" id="imageTarget">
+      <img id="sourceImg" alt="">
+      <svg class="grid-thirds" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="33.333" y1="0" x2="33.333" y2="100" />
+        <line x1="66.666" y1="0" x2="66.666" y2="100" />
+        <line x1="0" y1="33.333" x2="100" y2="33.333" />
+        <line x1="0" y1="66.666" x2="100" y2="66.666" />
+      </svg>
+      <div class="busy-veil"><span class="spinner"></span><span id="veilText">正在处理…</span></div>
+    </div>
+  </div>
+
+  <div class="bottom-bar" id="bottomBar" hidden>
+    <div class="bottom-controls">
+      <button class="round-btn" id="newImgBtn" title="换一张图">+</button>
+      <button class="info-pill" id="statusPill" type="button" title="点击恢复自动校正">
+        <span id="statusText">等待检测…</span>
+      </button>
+      <button class="round-btn peek" id="peekBtn" title="按住显示原图">原图</button>
+      <button class="round-btn primary" id="saveBtn" title="保存">↓</button>
+    </div>
+  </div>
+
+  <div class="menu-backdrop" id="menuBackdrop"></div>
+  <div class="menu-sheet" id="menuSheet" role="dialog" aria-label="选择校正方式">
+    <button class="menu-item" id="menuAuto" data-mode="auto">
+      <span>重新自动校正</span>
+      <span class="meta" data-meta="auto"></span>
+    </button>
+    <div class="menu-divider"></div>
+    <button class="menu-item" id="menuNone" data-mode="none">
+      <span>无需调整</span>
+      <span class="meta" data-meta="none"></span>
+    </button>
+    <button class="menu-item" id="menuBoth" data-mode="both">
+      <span>应用全面校正</span>
+      <span class="meta" data-meta="both"></span>
+    </button>
+    <button class="menu-item" id="menuVertical" data-mode="vertical">
+      <span>应用垂直校正</span>
+      <span class="meta" data-meta="vertical"></span>
+    </button>
+    <button class="menu-item" id="menuHorizontal" data-mode="horizontal">
+      <span>应用水平校正</span>
+      <span class="meta" data-meta="horizontal"></span>
+    </button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/geometry.js"></script>
+  <script>
+    (() => {
+
+      // ──────────────────────────────────────────────────────────
+      // STATE
+      // ──────────────────────────────────────────────────────────
+      let currentFile = null;
+      let sourceImgDims = null;       // [w, h] in source pixel space
+      let sourceCorners = null;       // [[x,y]*4] in source pixel space (clockwise from TL)
+      let detectedCorners = null;     // last server-detected corners (for Reset)
+      let correctionState = null;     // canonical {intrinsics, rotation, crop}
+      let detectedState = null;       // last server-selected canonical state
+      let imageIntrinsics = null;     // EXIF-derived K returned by /detect
+      let chosenMode = null;          // which mode the server picked as the auto winner
+      let appliedMode = null;         // what's currently displayed: 'auto' | 'both' | 'vertical' | 'horizontal' | null (manual drag)
+      let alternatives = null;        // per-mode results cached from /detect for the menu
+      let objectAspect = null;        // physical rect aspect locked at detect/load time
+      let displaySize = null;         // [w, h] in CSS pixels of the target rectangle
+      let lastPhysics = null;         // frontend diagnostics for comparing with /validate
+      let busy = false;
+      const Geometry = window.PerspectiveGeometry;
+
+      const MODE_LABEL = {
+        none: '无需校正',
+        both: '全面',
+        vertical: '垂直',
+        horizontal: '水平',
+      };
+      // Three mutually-reinforcing safety valves for the manual drag path.
+      // Tighter values = more conservative (more drags rejected before
+      // hitting visually weird states). The numbers below were picked by
+      // taste, not derived — adjust if `window.__rejectStats` shows one is
+      // doing all the work or another never fires. See README "手动校正
+      // 背后的数学" section for the role each plays.
+      //
+      // This is now a real camera angle because K comes from EXIF when present.
+      const MAX_ROT_RAD = 35 * Math.PI / 180;
+      const MAX_RECTIFY_ERROR = 0.035;
+
+      // Lightweight reject-stat counter. No console spam — just running
+      // tallies exposed on window.__rejectStats so we can introspect
+      // "which threshold actually does the work in real usage" by
+      // checking the counters after a typical session, e.g.:
+      //   window.__rejectStats   // { rotation: 12, rectify: 3, ... }
+      //   window.__rejectStats.reset()
+      const rejectStats = {
+        rotation: 0, rectify: 0, projective: 0, degenerate: 0, crop: 0,
+        reset() { for (const k of Object.keys(this)) if (typeof this[k] === 'number') this[k] = 0; },
+      };
+      window.__rejectStats = rejectStats;
+      const MIN_PROJECTIVE_W_RATIO = 0.22;
+
+      const dropzone = document.getElementById('dropzone');
+      const fileInput = document.getElementById('fileInput');
+      const stage = document.getElementById('stage');
+      const imageTarget = document.getElementById('imageTarget');
+      const sourceImg = document.getElementById('sourceImg');
+      const newImgBtn = document.getElementById('newImgBtn');
+      const bottomBar = document.getElementById('bottomBar');
+      const statusPill = document.getElementById('statusPill');
+      const statusText = document.getElementById('statusText');
+      const veilText = document.getElementById('veilText');
+      const peekBtn = document.getElementById('peekBtn');
+      const saveBtn = document.getElementById('saveBtn');
+      const toastEl = document.getElementById('toast');
+
+      function toast(msg, ms = 1800) {
+        toastEl.innerHTML = msg;
+        toastEl.classList.add('show');
+        clearTimeout(toast._t);
+        toast._t = setTimeout(() => toastEl.classList.remove('show'), ms);
+      }
+      // Single blocking-state primitive. Both auto-detect and save go through
+      // here. The veil over the image is the only progress indicator — the
+      // pill keeps showing the last-settled result text (dimmed via :disabled),
+      // and toast is reserved for terminal feedback (errors, "已下载").
+      function setBusy(b, label) {
+        busy = b;
+        saveBtn.disabled = b;
+        newImgBtn.disabled = b;
+        statusPill.disabled = b;
+        peekBtn.disabled = b;
+        if (b) {
+          veilText.textContent = label || '正在处理…';
+          stage.classList.add('busy');
+        } else {
+          stage.classList.remove('busy');
+        }
+      }
+
+      // statusPill text — reflects the latest SETTLED detect result. Never
+      // shows "detecting" itself; that's the veil's job (see setBusy).
+      // `state`: 'success' | 'failed'.
+      function setStatus(state, mode) {
+        statusPill.classList.remove('warn');
+        if (state === 'success') {
+          const label = MODE_LABEL[mode] || mode || '';
+          if (mode === 'none') {
+            statusText.innerHTML = `<span class="mode">${label}</span> · 保留原图`;
+          } else {
+            statusText.innerHTML = `已完成 <span class="mode">${label}</span> 自动校正`;
+          }
+        } else {
+          // Detection is deterministic (seeded RANSAC) — re-running on the
+          // same image yields the same result. So instead of promising
+          // "click to retry", point the user to the only thing that
+          // actually moves forward: dragging the image manually.
+          statusPill.classList.add('warn');
+          statusText.innerHTML = `<span class="mode">未检测到</span> · 拖动画面手动调整`;
+        }
+      }
+
+      // ──────────────────────────────────────────────────────────
+      // PROJECTIVE TRANSFORM SOLVER (for CSS matrix3d)
+      // Given 4 source points and 4 destination points, compute the 3x3 projective
+      // transform and return it as a CSS matrix3d string. Solves the standard 8-DOF
+      // homography via the basis-to-points adjugate trick (Franklin Ta).
+      // ──────────────────────────────────────────────────────────
+      function adj(m) {
+        return [
+          m[4] * m[8] - m[5] * m[7], m[2] * m[7] - m[1] * m[8], m[1] * m[5] - m[2] * m[4],
+          m[5] * m[6] - m[3] * m[8], m[0] * m[8] - m[2] * m[6], m[2] * m[3] - m[0] * m[5],
+          m[3] * m[7] - m[4] * m[6], m[1] * m[6] - m[0] * m[7], m[0] * m[4] - m[1] * m[3],
+        ];
+      }
+      function multmm(a, b) {
+        const c = new Array(9);
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+          let s = 0;
+          for (let k = 0; k < 3; k++) s += a[3 * i + k] * b[3 * k + j];
+          c[3 * i + j] = s;
+        }
+        return c;
+      }
+      function multmv(m, v) {
+        return [
+          m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+          m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
+          m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
+        ];
+      }
+      function basisToPoints(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const m = [x1, x2, x3, y1, y2, y3, 1, 1, 1];
+        const v = multmv(adj(m), [x4, y4, 1]);
+        return multmm(m, [v[0], 0, 0, 0, v[1], 0, 0, 0, v[2]]);
+      }
+      // Inputs: src[4] and dst[4], each in [TL, TR, BR, BL] order (clockwise from
+      // top-left). Returns the 3×3 projective matrix as a flat 9-array (row-major).
+      function projective3x3For(src, dst) {
+        // Reorder to TL/TR/BL/BR for the basis solver
+        const s = basisToPoints(
+          src[0][0], src[0][1], src[1][0], src[1][1],
+          src[3][0], src[3][1], src[2][0], src[2][1],
+        );
+        const d = basisToPoints(
+          dst[0][0], dst[0][1], dst[1][0], dst[1][1],
+          dst[3][0], dst[3][1], dst[2][0], dst[2][1],
+        );
+        const t = multmm(d, adj(s));
+        for (let i = 0; i < 9; i++) t[i] /= t[8];
+        return t;
+      }
+
+      // 3×3 row-major matrix → CSS matrix3d string
+      function toMatrix3dCss(t) {
+        return `matrix3d(${[
+          t[0], t[3], 0, t[6],
+          t[1], t[4], 0, t[7],
+          0, 0, 1, 0,
+          t[2], t[5], 0, t[8],
+        ].join(',')})`;
+      }
+
+      // ──────────────────────────────────────────────────────────
+      // CAMERA POSE SOLVER (mirrored by _rotation_homography_from_corners in fix.py)
+      // ──────────────────────────────────────────────────────────
+      function mat3Inverse(m) {
+        const det =
+          m[0] * (m[4] * m[8] - m[5] * m[7]) -
+          m[1] * (m[3] * m[8] - m[5] * m[6]) +
+          m[2] * (m[3] * m[7] - m[4] * m[6]);
+        if (Math.abs(det) < 1e-12) return null;
+        return adj(m).map(v => v / det);
+      }
+      function mat3Transpose(m) {
+        return [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
+      }
+      function applyMat3(m, p) {
+        const x = m[0] * p[0] + m[1] * p[1] + m[2];
+        const y = m[3] * p[0] + m[4] * p[1] + m[5];
+        const w = m[6] * p[0] + m[7] * p[1] + m[8];
+        return [x / w, y / w];
+      }
+      const v3 = {
+        sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
+        scale: (v, s) => [v[0]*s, v[1]*s, v[2]*s],
+        norm: v => Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]),
+        dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
+        cross: (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+      };
+
+      /**
+       * Given 4 image-plane points (clockwise from TL) representing the projection
+       * of a planar rectangle with aspect ratio `aspect`, and camera intrinsics K,
+       * return the rotation R as a 3×3 row-major matrix. Returns null on degenerate
+       * input (collinear points, K singular, etc.) so the caller can reject that
+       * drag step instead of falling back to a shape-distorting 8-DOF transform.
+       *
+       * Method: Direct Linear Transform → world↔image homography H = K[R₁R₂t],
+       * then decompose: K⁻¹H gives [R₁R₂t] as columns, normalize/Gram-Schmidt,
+       * R₃ = R₁×R₂. The Python save path mirrors this so preview and export
+       * choose the same deterministic closest rotation.
+       */
+      function solveCameraRotation(userCorners, aspect, K) {
+        const world = [[0, 0], [aspect, 0], [aspect, 1], [0, 1]];
+        const Hwi = projective3x3For(world, userCorners);
+        const Kinv = mat3Inverse(K);
+        if (!Kinv) return null;
+        const M = multmm(Kinv, Hwi);   // [R1 R2 t] as columns of a 3×3
+        const m1 = [M[0], M[3], M[6]];
+        const m2 = [M[1], M[4], M[7]];
+        const mag1 = v3.norm(m1), mag2 = v3.norm(m2);
+        if (mag1 < 1e-9 || mag2 < 1e-9) return null;
+
+        // IPPE planar pose is sign-ambiguous: m1 and -m1 both lead to a valid
+        // rotation that fits the same homography (the world plane can sit on
+        // either side of the camera). Picking the wrong branch flips the
+        // recovered orientation by ~180° about a world-plane axis — visually
+        // the rotated quad ends up mirrored, conservativeCropRect collapses,
+        // and the menu-apply silently does nothing. We try both branches
+        // and pick the one with smaller rotation magnitude (real corrections
+        // are small; near-180° rotations are the wrong branch).
+        function buildBranch(sign) {
+          let r1 = v3.scale(m1, sign / mag1);
+          let r2 = v3.scale(m2, sign / mag2);
+          r2 = v3.sub(r2, v3.scale(r1, v3.dot(r1, r2)));
+          const r2mag = v3.norm(r2);
+          if (r2mag < 1e-9) return null;
+          r2 = v3.scale(r2, 1 / r2mag);
+          let r3 = v3.cross(r1, r2);
+          if (v3.dot(r1, v3.cross(r2, r3)) < 0) r3 = v3.scale(r3, -1);
+          return [
+            r1[0], r2[0], r3[0],
+            r1[1], r2[1], r3[1],
+            r1[2], r2[2], r3[2],
+          ];
+        }
+        const branches = [buildBranch(+1), buildBranch(-1)].filter(r => r !== null);
+        if (branches.length === 0) return null;
+        const theta = R => {
+          const t = R[0] + R[4] + R[8];
+          return Math.acos(Math.max(-1, Math.min(1, (t - 1) / 2)));
+        };
+        branches.sort((a, b) => theta(a) - theta(b));
+        return branches[0];
+      }
+
+      // ──────────────────────────────────────────────────────────
+      // DISPLAY SIZING — fit a rectangle of source aspect inside the viewport
+      // ──────────────────────────────────────────────────────────
+      function computeDisplaySize() {
+        if (!sourceImgDims) return;
+        // No top chrome any more — only reserve a small visual breathing
+        // margin at the top, plus the bottom bar's actual footprint.
+        const topMargin = 16;
+        const sideMargin = 16;
+        const bottomBarH = bottomBar.offsetHeight || 92;
+        const maxW = window.innerWidth - sideMargin * 2;
+        const maxH = window.innerHeight - topMargin - bottomBarH;
+        const ratio = sourceImgDims[0] / sourceImgDims[1];
+        let w, h;
+        if (maxW / maxH > ratio) {
+          h = maxH; w = h * ratio;
+        } else {
+          w = maxW; h = w / ratio;
+        }
+        displaySize = [w, h];
+        imageTarget.style.width = `${w}px`;
+        imageTarget.style.height = `${h}px`;
+      }
+
+      // ──────────────────────────────────────────────────────────
+      // FAST CONSERVATIVE CROP RECT
+      //
+      // This runs on every pointermove, so keep it O(1). It is intentionally
+      // conservative and rejects flipped/over-tilted quads instead of doing the
+      // heavier scanline max-rect search that made dragging feel sticky.
+      // ──────────────────────────────────────────────────────────
+      function conservativeCropRect(rotated) {
+        const [tl, tr, br, bl] = rotated;
+        const xmin = Math.max(tl[0], bl[0]);
+        const xmax = Math.min(tr[0], br[0]);
+        const ymin = Math.max(tl[1], tr[1]);
+        const ymax = Math.min(br[1], bl[1]);
+        if (xmax <= xmin || ymax <= ymin) return null;
+        return { xmin, ymin, xmax, ymax };
+      }
+
+      function rectificationError(rotated, dw, dh) {
+        const [tl, tr, br, bl] = rotated;
+        const err = Math.max(
+          Math.abs(tl[0] - bl[0]),
+          Math.abs(tr[0] - br[0]),
+          Math.abs(tl[1] - tr[1]),
+          Math.abs(bl[1] - br[1]),
+        );
+        return err / Math.max(1, Math.min(dw, dh));
+      }
+
+      function projectiveWIsStable(m, w, h) {
+        const ws = [[0, 0], [w, 0], [w, h], [0, h]].map(([x, y]) =>
+          m[6] * x + m[7] * y + m[8]
+        );
+        const allPositive = ws.every(v => v > 0);
+        const allNegative = ws.every(v => v < 0);
+        if (!allPositive && !allNegative) return false;
+        const abs = ws.map(v => Math.abs(v));
+        return Math.min(...abs) / Math.max(...abs) >= MIN_PROJECTIVE_W_RATIO;
+      }
+
+      // Reorder a 4-corner array to spatial CW-from-TL by centroid quadrant.
+      //
+      // The server's auto_correct labels its output corners as TL/TR/BR/BL of
+      // the OUTPUT rectangle (in warped space), but for high-roll camera poses
+      // (or when SVD-reorthogonalization in homography_from_vps picks an
+      // equivalent-but-flipped rotation) the inverse-warped source positions
+      // can end up in a wildly different spatial order — e.g. [BL, BR, TR, TL]
+      // for IMG_5984. solveCameraRotation assumes spatial CW-from-TL input;
+      // feeding it label-CW but spatially-shuffled corners makes it pick a
+      // ~180° "rotation" that's geometrically consistent with the labels but
+      // physically nonsense (and breaks conservativeCropRect downstream).
+      //
+      // Quadrant-based reassignment realigns labels with image-space layout:
+      // index 0 = corner in TL quadrant of centroid, etc. Loses any explicit
+      // roll info in the corner ORDER, but the rotation itself is still
+      // recovered correctly by the solver.
+      //
+      // Falls back to the original ordering if the 4 corners don't fall in 4
+      // distinct quadrants (degenerate quad — solver will fail on its own).
+      function normalizeCornerOrder(corners) {
+        const cx = (corners[0][0] + corners[1][0] + corners[2][0] + corners[3][0]) / 4;
+        const cy = (corners[0][1] + corners[1][1] + corners[2][1] + corners[3][1]) / 4;
+        const slots = [null, null, null, null];  // TL, TR, BR, BL
+        for (const p of corners) {
+          const left = p[0] < cx, top = p[1] < cy;
+          const idx = top ? (left ? 0 : 1) : (left ? 3 : 2);
+          if (slots[idx] !== null) return corners;  // collision → bail
+          slots[idx] = p;
+        }
+        if (slots.some(s => s === null)) return corners;
+        return slots;
+      }
+
+      // Approximate the aspect of the "intended physical rectangle" from
+      // the image-space corner positions (avg of opposing edge lengths).
+      //
+      // KNOWN BIAS: the corners we pass in are themselves a tilted-camera
+      // projection, so the vertical edges are foreshortened by ~cos(tilt).
+      // For a true square at 30° tilt, this returns ~1.15 instead of 1.0
+      // (~15% off). For self-use on small corrections the bias is invisible.
+      // A more faithful estimate would iterate (solvePnP → reproject world
+      // square → re-fit aspect → solvePnP again) until aspect stabilizes,
+      // but that's not worth the complexity at current scope.
+      function aspectFromCorners(corners) {
+        const topW = Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]);
+        const botW = Math.hypot(corners[2][0] - corners[3][0], corners[2][1] - corners[3][1]);
+        const leftH = Math.hypot(corners[3][0] - corners[0][0], corners[3][1] - corners[0][1]);
+        const rightH = Math.hypot(corners[2][0] - corners[1][0], corners[2][1] - corners[1][1]);
+        const avgW = Math.max(1, (topW + botW) / 2);
+        const avgH = Math.max(1, (leftH + rightH) / 2);
+        return avgW / avgH;
+      }
+
+      // ──────────────────────────────────────────────────────────
+      // APPLY MATRIX3D — strict camera-rotation preview
+      //
+      // Treats the 4 source corners as the image projection of a real planar
+      // rectangle. Solves for the camera rotation R (3 DOF) and applies
+      // H_rot = K · Rᵀ · K⁻¹ as the live transform — the same math the
+      // backend `/warp` endpoint runs. Then composes with a uniform-scale +
+      // translate similarity fit (3 DOF, rigid) so the rotated user quad's
+      // bounding box fills the display rect.
+      //
+      // Result: image content is *only* perspective-corrected as a real
+      // camera could have shot it — no shear, no non-uniform stretch.
+      // If the user drags in a way that no camera rotation can explain
+      // (which is always, for non-rectangular subjects), the algorithm
+      // settles on the closest valid rotation (least-squares) and the
+      // visible result is the honest answer.
+      // ──────────────────────────────────────────────────────────
+      // Returns true on success, false when the drag should be rejected
+      // (degenerate input or rotation past MAX_ROT_RAD). Callers that are
+      // mid-drag should revert the corner that caused the rejection.
+      //
+      // `force: true` skips the rotation / rectify / projective-w thresholds.
+      // Use it when the corners came from the server's VP pipeline (menu
+      // apply) — those are already validated as physical, and our drag
+      // safety nets are calibrated for "user dragging by hand" not for
+      // "server giving a known-good answer."
+      function scaledIntrinsicsForDisplay(intrinsics) {
+        const [nw, nh] = sourceImgDims;
+        const [dw, dh] = displaySize;
+        return {
+          ...intrinsics,
+          fx: intrinsics.fx * dw / nw,
+          fy: intrinsics.fy * dh / nh,
+          cx: intrinsics.cx * dw / nw,
+          cy: intrinsics.cy * dh / nh,
+        };
+      }
+
+      function scaledStateView(state) {
+        const [nw, nh] = sourceImgDims;
+        const [dw, dh] = displaySize;
+        const sx = dw / nw, sy = dh / nh;
+        const scaledIntrinsics = scaledIntrinsicsForDisplay(state.intrinsics);
+        const scaledCrop = state.crop
+          ? [state.crop[0] * sx, state.crop[1] * sy, state.crop[2] * sx, state.crop[3] * sy]
+          : null;
+        return Geometry.computeView(state.rotation, scaledIntrinsics, [dw, dh], scaledCrop);
+      }
+
+      function applyCorrectionState({ force = false } = {}) {
+        if (!correctionState || !sourceImgDims || !displaySize) return false;
+        try {
+          const view = scaledStateView(correctionState);
+          const thetaRad = view.thetaDeg * Math.PI / 180;
+          if (!force && thetaRad > MAX_ROT_RAD) {
+            rejectStats.rotation++;
+            return false;
+          }
+          if (!force && view.projectiveWRatio < MIN_PROJECTIVE_W_RATIO) {
+            rejectStats.projective++;
+            return false;
+          }
+          lastPhysics = {
+            accepted: true,
+            theta_deg: view.thetaDeg,
+            projective_w_ratio: view.projectiveWRatio,
+          };
+          sourceImg.style.transform = Geometry.toCssMatrix3d(view.matrix);
+          return true;
+        } catch (error) {
+          rejectStats.crop++;
+          return false;
+        }
+      }
+
+      function applyMatrix3d({ force = false } = {}) {
+        if (correctionState) return applyCorrectionState({ force });
+        if (!sourceCorners || !sourceImgDims || !displaySize || !objectAspect) return false;
+        const [nw, nh] = sourceImgDims;
+        const [dw, dh] = displaySize;
+        const userLocal = sourceCorners.map(([x, y]) => [x * dw / nw, y * dh / nh]);
+
+        const f = Math.max(dw, dh);
+        const K = [f, 0, dw / 2, 0, f, dh / 2, 0, 0, 1];
+
+        const R = solveCameraRotation(userLocal, objectAspect, K);
+        if (!R) { rejectStats.degenerate++; return false; }
+
+        // Rotation magnitude check — see README "手动校正背后的数学"
+        const traceR = R[0] + R[4] + R[8];
+        const cosTheta = Math.max(-1, Math.min(1, (traceR - 1) / 2));
+        const thetaRad = Math.acos(cosTheta);
+        if (!force && thetaRad > MAX_ROT_RAD) {
+          rejectStats.rotation++;
+          return false;
+        }
+
+        const Kinv = mat3Inverse(K);
+        const Hrot = multmm(K, multmm(mat3Transpose(R), Kinv));
+        if (!force && !projectiveWIsStable(Hrot, dw, dh)) {
+          rejectStats.projective++; return false;
+        }
+
+        const rotated = userLocal.map(p => applyMat3(Hrot, p));
+        const rectifyError = rectificationError(rotated, dw, dh);
+        if (!force && rectifyError > MAX_RECTIFY_ERROR) {
+          rejectStats.rectify++;
+          return false;
+        }
+
+        const ins = conservativeCropRect(rotated);
+        if (!ins) { rejectStats.crop++; return false; }
+        let { xmin, ymin, xmax, ymax } = ins;
+
+        // Center-crop to source aspect, same as backend's fit_aspect. The
+        // display rect already has source aspect (computeDisplaySize), so
+        // after this crop both ratios match and the uniform scale below
+        // fills the display exactly — no letterbox, no empty bands.
+        const targetAspect = nw / nh;
+        let insW = xmax - xmin, insH = ymax - ymin;
+        if (insW / insH > targetAspect) {
+          const newW = insH * targetAspect;
+          const cx = (xmin + xmax) / 2;
+          xmin = cx - newW / 2; xmax = cx + newW / 2;
+        } else {
+          const newH = insW / targetAspect;
+          const cy = (ymin + ymax) / 2;
+          ymin = cy - newH / 2; ymax = cy + newH / 2;
+        }
+        insW = Math.max(1, xmax - xmin);
+        insH = Math.max(1, ymax - ymin);
+
+        // Uniform scale + translate the cropped inscribed rect to fill display.
+        const s = dw / insW;  // equals dh/insH after the aspect crop
+        const tx = -s * xmin;
+        const ty = -s * ymin;
+        const S = [s, 0, tx, 0, s, ty, 0, 0, 1];
+
+        const M = multmm(S, Hrot);
+        lastPhysics = {
+          accepted: true,
+          theta_deg: thetaRad * 180 / Math.PI,
+          rectify_error: rectifyError,
+        };
+        sourceImg.style.transform = toMatrix3dCss(M);
+        return true;
+      }
+
+      // ──────────────────────────────────────────────────────────
+      // FILE UPLOAD
+      // ──────────────────────────────────────────────────────────
+      fileInput.addEventListener('change', (e) => {
+        const f = e.target.files[0];
+        if (f) loadFile(f);
+      });
+      ['dragenter', 'dragover'].forEach(ev =>
+        dropzone.addEventListener(ev, (e) => {
+          e.preventDefault();
+          dropzone.classList.add('dragover');
+        })
+      );
+      ['dragleave', 'drop'].forEach(ev =>
+        dropzone.addEventListener(ev, (e) => {
+          e.preventDefault();
+          dropzone.classList.remove('dragover');
+        })
+      );
+      dropzone.addEventListener('drop', (e) => {
+        const f = e.dataTransfer.files[0];
+        if (f) loadFile(f);
+      });
+
+      /**
+       * Downscale the uploaded image to ~screen-resolution before display, so
+       * matrix3d on huge iPhone shots (24MP) stays at 60fps. Save still uses
+       * the original full-resolution file via currentFile.
+       * Returns a blob URL (or null if the browser couldn't decode, e.g. HEIC).
+       */
+      async function makePreviewURL(file) {
+        const srcUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.src = srcUrl;
+        try {
+          await (img.decode ? img.decode() : new Promise((res, rej) => {
+            img.onload = res; img.onerror = rej;
+          }));
+        } catch {
+          URL.revokeObjectURL(srcUrl);
+          return null;
+        }
+        const ow = img.naturalWidth;
+        const oh = img.naturalHeight;
+        if (!ow || !oh) {
+          URL.revokeObjectURL(srcUrl);
+          return null;
+        }
+        const dpr = window.devicePixelRatio || 1;
+        const maxDim = Math.min(2500, Math.max(window.innerWidth, window.innerHeight) * dpr);
+        const scale = Math.min(1, maxDim / Math.max(ow, oh));
+        if (scale === 1) return { url: srcUrl, naturalSize: [ow, oh] };
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(ow * scale);
+        canvas.height = Math.round(oh * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(srcUrl);
+        return new Promise((resolve) => {
+          canvas.toBlob((blob) => {
+            resolve({
+              url: blob ? URL.createObjectURL(blob) : srcUrl,
+              naturalSize: [ow, oh],
+            });
+          }, 'image/jpeg', 0.88);
+        });
+      }
+
+      let lastPreviewURL = null;
+
+      async function loadFile(file) {
+        currentFile = file;
+        // Reset per-image state so the previous photo's pill text /
+        // alternatives / applied-mode don't linger while detect runs.
+        statusPill.classList.remove('warn');
+        statusText.textContent = '等待检测…';
+        chosenMode = null;
+        appliedMode = null;
+        alternatives = null;
+        correctionState = null;
+        detectedState = null;
+        imageIntrinsics = null;
+        if (lastPreviewURL) URL.revokeObjectURL(lastPreviewURL);
+        const result = await makePreviewURL(file);
+        if (!result) {
+          toast('这个浏览器无法预览该格式。试试 Safari，或换 JPG/PNG。', 4000);
+          return;
+        }
+        lastPreviewURL = result.url;
+        sourceImg.src = result.url;
+        try {
+          await new Promise((resolve, reject) => {
+            sourceImg.onload = resolve;
+            sourceImg.onerror = reject;
+          });
+        } catch {
+          toast('图片加载失败');
+          return;
+        }
+        // Show the raw source IMMEDIATELY (no matrix3d yet). Detect runs while
+        // the user sees the original; when it succeeds matrix3d applies, giving
+        // a natural before/after reveal.
+        sourceImg.style.transform = 'none';
+        sourceCorners = null;
+        objectAspect = null;
+        lastPhysics = null;
+        sourceImgDims = result.naturalSize;
+        dropzone.hidden = true;
+        stage.hidden = false;
+        bottomBar.hidden = false;
+        computeDisplaySize();
+        await runDetect();
+      }
+
+      // Re-trigger the file picker; the new image replaces the current one.
+      newImgBtn.addEventListener('click', () => {
+        if (busy) return;
+        fileInput.value = '';  // reset so picking the SAME file again still fires 'change'
+        fileInput.click();
+      });
+
+      // ──────────────────────────────────────────────────────────
+      // BACKEND CALLS
+      // ──────────────────────────────────────────────────────────
+      async function runDetect() {
+        setBusy(true, '自动检测中…');
+        try {
+          const fd = new FormData();
+          fd.append('file', currentFile);
+          // mode omitted → server defaults to "auto" (try both/vertical/horizontal,
+          // pick the one with most preserved area)
+          const r = await fetch('/detect', { method: 'POST', body: fd });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const data = await r.json();
+          sourceImgDims = data.image_size;
+          imageIntrinsics = data.intrinsics;
+          // Normalize every server corner set to spatial CW-from-TL so
+          // solveCameraRotation gets the layout it expects regardless of
+          // which IPPE branch / SVD orientation the server's VP pipeline
+          // landed on. See normalizeCornerOrder for the rationale.
+          const winnerCorners = normalizeCornerOrder(data.corners);
+          sourceCorners = winnerCorners.map(p => p.slice());
+          detectedCorners = winnerCorners.map(p => p.slice());
+          correctionState = data.state ? structuredClone(data.state) : null;
+          detectedState = correctionState ? structuredClone(correctionState) : null;
+          chosenMode = data.mode;
+          appliedMode = data.detected ? 'auto' : null;
+          if (data.alternatives) {
+            alternatives = {};
+            for (const [m, r] of Object.entries(data.alternatives)) {
+              alternatives[m] = {
+                ...r,
+                corners: r.corners ? normalizeCornerOrder(r.corners) : null,
+                state: r.state ? structuredClone(r.state) : null,
+              };
+            }
+          } else {
+            alternatives = null;
+          }
+          objectAspect = aspectFromCorners(detectedCorners);
+          setStatus(data.detected ? 'success' : 'failed', data.mode);
+          redraw();
+        } catch (e) {
+          setStatus('failed');
+          toast(`检测失败：${e.message}`);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function runSave() {
+        if (!currentFile || !sourceCorners) return;
+        setBusy(true, '生成中…');
+        try {
+          const fd = new FormData();
+          fd.append('file', currentFile);
+          if (correctionState) {
+            fd.append('state', JSON.stringify(correctionState));
+          } else {
+            fd.append('corners', JSON.stringify(sourceCorners));
+          }
+          fd.append('keep_aspect', 'true');
+          if (objectAspect) fd.append('object_aspect', String(objectAspect));
+          const r = await fetch('/warp', { method: 'POST', body: fd });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const blob = await r.blob();
+          const stem = currentFile.name.replace(/\.[^.]+$/, '');
+          const filename = `${stem}_fixed.jpg`;
+          const fileObj = new File([blob], filename, { type: 'image/jpeg' });
+
+          // On iOS only, route through navigator.share — opens the system
+          // share sheet where the user can pick "存储到照片". Desktop Safari
+          // also implements Web Share, but there it would yield an action
+          // menu instead of a plain download, which is the opposite of what
+          // a desktop user wants. So UA-gate the share path to iOS.
+          //
+          // Caveat: navigator.share on iOS requires a secure context. On a
+          // LAN deployment served over plain HTTP (http://192.168.x.x:8000),
+          // canShare returns false and we fall back to download — which on
+          // iOS Safari opens "保存到文件" instead of "存储到照片". Real fix
+          // is HTTPS (self-signed cert + trust on device); deferred.
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+          if (isIOS && navigator.canShare && navigator.canShare({ files: [fileObj] })) {
+            try {
+              await navigator.share({ files: [fileObj] });
+              // user completed or cancelled the share — both are fine
+            } catch (e) {
+              if (e.name === 'AbortError') return;
+              downloadBlob(blob, filename);
+            }
+          } else {
+            downloadBlob(blob, filename);
+          }
+        } catch (e) {
+          toast(`保存失败：${e.message}`);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        toast('已下载');
+      }
+
+      function redraw() {
+        computeDisplaySize();
+        applyMatrix3d();
+      }
+
+      async function validateCurrentCorners() {
+        if ((!sourceCorners && !correctionState) || !sourceImgDims) return;
+        try {
+          const fd = new FormData();
+          if (correctionState) {
+            fd.append('state', JSON.stringify(correctionState));
+          } else {
+            fd.append('corners', JSON.stringify(sourceCorners));
+          }
+          fd.append('image_size', JSON.stringify(sourceImgDims));
+          if (objectAspect) fd.append('object_aspect', String(objectAspect));
+          if (lastPhysics) fd.append('frontend', JSON.stringify(lastPhysics));
+          const r = await fetch('/validate', { method: 'POST', body: fd });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const backend = await r.json();
+          const delta = lastPhysics && backend.theta_deg != null
+            ? Math.abs(lastPhysics.theta_deg - backend.theta_deg)
+            : null;
+          const payload = { frontend: lastPhysics, backend, delta };
+          if (!backend.accepted || (delta != null && delta > 1e-5)) {
+            console.warn('physics validation mismatch', payload);
+          } else {
+            console.log('physics validation', payload);
+          }
+        } catch (e) {
+          console.warn('physics validation failed', e);
+        }
+      }
+
+      // ──────────────────────────────────────────────────────────
+      // CAMERA DRAG — horizontal motion changes yaw, vertical motion changes
+      // pitch, and a one-finger gesture adds no optical-axis roll increment.
+      // The quadrant remains relevant only to the legacy corner-state path.
+      // ──────────────────────────────────────────────────────────
+      let activeIdx = -1;
+      let startPointer = null;
+      let startCorner = null;
+      let startRotation = null;
+      let activePointerId = null;
+
+      function cameraRotationForDrag(initialRotation, displacement) {
+        return Geometry.cameraRotationForDrag(
+          initialRotation, displacement,
+          scaledIntrinsicsForDisplay(imageIntrinsics)
+        );
+      }
+
+      function pickQuadrant(clientX, clientY) {
+        const r = imageTarget.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const isLeft = clientX < cx;
+        const isTop = clientY < cy;
+        if (isTop && isLeft) return 0; // TL
+        if (isTop && !isLeft) return 1; // TR
+        if (!isTop && !isLeft) return 2; // BR
+        return 3;                         // BL
+      }
+
+      imageTarget.addEventListener('pointerdown', (e) => {
+        if (busy || peeking || !sourceCorners) return;
+        e.preventDefault();
+        activeIdx = pickQuadrant(e.clientX, e.clientY);
+        startPointer = { x: e.clientX, y: e.clientY };
+        startCorner = sourceCorners[activeIdx].slice();
+        startRotation = correctionState ? correctionState.rotation.slice() : null;
+        activePointerId = e.pointerId;
+        imageTarget.classList.add('dragging');
+        try { imageTarget.setPointerCapture(activePointerId); } catch { }
+        // Any manual drag means we're no longer on a preset mode; the menu's
+        // "current" badge should drop off all options until the user picks one again.
+        appliedMode = null;
+      });
+
+      imageTarget.addEventListener('pointermove', (e) => {
+        if (activeIdx < 0) return;
+        if (startRotation && imageIntrinsics) {
+          const displacement = [
+            e.clientX - startPointer.x,
+            e.clientY - startPointer.y,
+          ];
+          let rotation;
+          try {
+            rotation = cameraRotationForDrag(startRotation, displacement);
+          } catch {
+            rotation = null;
+          }
+          if (!rotation) return;
+          const previous = correctionState;
+          try {
+            correctionState = Geometry.makeState(rotation, imageIntrinsics, sourceImgDims);
+          } catch {
+            correctionState = previous;
+            return;
+          }
+          if (!applyMatrix3d()) {
+            correctionState = previous;
+          } else {
+            updatePillForManualState();
+          }
+          return;
+        }
+        const r = imageTarget.getBoundingClientRect();
+        const scaleX = sourceImgDims[0] / r.width;
+        const scaleY = sourceImgDims[1] / r.height;
+        // Invert sign: finger moving right should make image content move right
+        // (i.e., source corner moves LEFT — less inset — so more of that side is
+        // visible at the display corner). Matches direct-manipulation intuition.
+        const dx = (e.clientX - startPointer.x) * scaleX;
+        const dy = (e.clientY - startPointer.y) * scaleY;
+        const prev = sourceCorners[activeIdx];
+        sourceCorners[activeIdx] = [
+          Math.max(0, Math.min(sourceImgDims[0], startCorner[0] - dx)),
+          Math.max(0, Math.min(sourceImgDims[1], startCorner[1] - dy)),
+        ];
+        // If the new corner pushes the implied camera rotation past 45°,
+        // applyMatrix3d returns false — revert so the handle effectively
+        // stops following the finger at the edge of the physical envelope.
+        if (!applyMatrix3d()) {
+          sourceCorners[activeIdx] = prev;
+        } else {
+          // Real-time pill readout: the displayed angle is the angular
+          // distance between current and "ideal" camera pose, so it
+          // should track the finger continuously.
+          updatePillForManualState();
+        }
+      });
+
+      function endDrag() {
+        if (activeIdx < 0) return;
+        activeIdx = -1;
+        startPointer = null;
+        startCorner = null;
+        startRotation = null;
+        imageTarget.classList.remove('dragging');
+        if (activePointerId !== null) {
+          try { imageTarget.releasePointerCapture(activePointerId); } catch { }
+        }
+        activePointerId = null;
+        // Drag ended → pill is no longer on any auto/menu mode. Show
+        // neutral metrics ("倾斜 X° · 像素 Y%") instead of the misleading
+        // "已完成 X 自动校正" text that implied a specific mode is active.
+        // The pill stays clickable to invite re-opening the menu.
+        updatePillForManualState();
+        validateCurrentCorners();
+      }
+
+      // Render the pill in "manual drag" state: neutral measurement readout
+      // derived from lastPhysics (set by applyMatrix3d on the most recent
+      // successful render). Falls back to a placeholder if physics isn't
+      // available yet.
+      function updatePillForManualState() {
+        statusPill.classList.remove('warn');
+        if (lastPhysics && lastPhysics.theta_deg != null) {
+          const theta = lastPhysics.theta_deg.toFixed(1);
+          statusText.innerHTML = `手动调整 · <span class="mode">倾斜 ${theta}°</span>`;
+        } else {
+          statusText.textContent = '手动调整';
+        }
+      }
+      imageTarget.addEventListener('pointerup', endDrag);
+      imageTarget.addEventListener('pointercancel', endDrag);
+
+      // ──────────────────────────────────────────────────────────
+      // CONTROLS
+      // ──────────────────────────────────────────────────────────
+      // statusPill click → open the mode menu (bottom sheet).
+      // The menu lets the user explicitly apply a specific correction mode,
+      // or restore the auto-detected winner. All corner sets are cached
+      // client-side from the initial /detect response, so picking any
+      // option is instant — no server roundtrip.
+      const menuBackdrop = document.getElementById('menuBackdrop');
+      const menuSheet = document.getElementById('menuSheet');
+      const menuItems = {
+        auto:       document.getElementById('menuAuto'),
+        none:       document.getElementById('menuNone'),
+        both:       document.getElementById('menuBoth'),
+        vertical:   document.getElementById('menuVertical'),
+        horizontal: document.getElementById('menuHorizontal'),
+      };
+
+      function openMenu() {
+        // Build per-item state from the cached alternatives + applied mode.
+        for (const mode of ['none', 'both', 'vertical', 'horizontal']) {
+          const item = menuItems[mode];
+          const metaEl = item.querySelector('[data-meta]');
+          const alt = alternatives && alternatives[mode];
+          // Default: disabled, no meta text
+          item.disabled = true;
+          item.classList.remove('current');
+          metaEl.textContent = '';
+          metaEl.classList.remove('warn');
+          if (!alt) continue;
+          if (alt.reason || !alt.corners) {
+            // Not viable — show the reason as warn-colored meta
+            metaEl.textContent = alt.reason || 'VP 缺失';
+            metaEl.classList.add('warn');
+            continue;
+          }
+          // Viable — enable, show area %, mark current if user has applied it
+          item.disabled = false;
+          metaEl.textContent = `${(alt.area_ratio * 100).toFixed(1)}%`;
+          if (mode === appliedMode) {
+            item.classList.add('current');
+            metaEl.textContent += ' · 当前';
+          }
+        }
+        // "Auto" item: enabled iff we have a detected winner; marked current
+        // when the displayed result IS the auto winner (i.e. user hasn't
+        // overridden via the menu and hasn't manually dragged).
+        const autoItem = menuItems.auto;
+        autoItem.disabled = !detectedCorners;
+        autoItem.classList.toggle('current', appliedMode === 'auto');
+        const autoMeta = autoItem.querySelector('[data-meta]');
+        autoMeta.classList.remove('warn');
+        autoMeta.textContent = (appliedMode === 'auto' && chosenMode)
+          ? `${MODE_LABEL[chosenMode] || chosenMode} · 当前`
+          : '';
+        menuSheet.classList.add('open');
+        menuBackdrop.classList.add('open');
+      }
+      function closeMenu() {
+        menuSheet.classList.remove('open');
+        menuBackdrop.classList.remove('open');
+      }
+
+      function applyMode(mode) {
+        let labelMode;
+        if (mode === 'auto') {
+          // Restore the winner of /detect.
+          if (!detectedCorners) return;
+          sourceCorners = detectedCorners.map(p => p.slice());
+          correctionState = detectedState ? structuredClone(detectedState) : null;
+          objectAspect = aspectFromCorners(detectedCorners);
+          labelMode = chosenMode;
+        } else {
+          const alt = alternatives && alternatives[mode];
+          if (!alt || !alt.corners) return;
+          sourceCorners = alt.corners.map(p => p.slice());
+          correctionState = alt.state ? structuredClone(alt.state) : null;
+          objectAspect = aspectFromCorners(alt.corners);
+          labelMode = mode;
+        }
+        appliedMode = mode;
+        lastPhysics = null;
+        // Force-apply: the corners came from the server's own VP-based
+        // pipeline, which already validated them as a physical camera
+        // rotation. The frontend's drag-safety thresholds (35° rot cap,
+        // 3.5% rectify error, projective-w stability) exist to fence in
+        // the *user's* drag; server-derived corners shouldn't be subject
+        // to them — the server is authoritative here.
+        applyMatrix3d({ force: true });
+        // Brief pill flash as visual ack
+        statusPill.classList.remove('flash');
+        void statusPill.offsetWidth;
+        statusPill.classList.add('flash');
+        if (labelMode) setStatus('success', labelMode);
+      }
+
+      statusPill.addEventListener('click', () => {
+        if (busy) return;
+        openMenu();
+      });
+      menuBackdrop.addEventListener('click', closeMenu);
+      for (const [mode, item] of Object.entries(menuItems)) {
+        item.addEventListener('click', () => {
+          if (item.disabled) return;
+          applyMode(mode);
+          closeMenu();
+        });
+      }
+
+      // ──────────────────────────────────────────────────────────
+      // PEEK BUTTON — press-and-hold shows the un-warped source.
+      // Mutually exclusive with drag: starting peek aborts any active drag,
+      // and image drag is disabled while peeking.
+      // ──────────────────────────────────────────────────────────
+      let peeking = false;
+
+      function startPeek(pointerId) {
+        if (busy || !sourceCorners) return;
+        if (activeIdx >= 0) endDrag();   // mutex: kill any in-flight drag
+        peeking = true;
+        stage.dataset.peeking = 'true';
+        peekBtn.classList.add('pressing');
+        if (pointerId != null) {
+          try { peekBtn.setPointerCapture(pointerId); } catch { }
+        }
+      }
+      function endPeek() {
+        if (!peeking) return;
+        peeking = false;
+        stage.dataset.peeking = 'false';
+        peekBtn.classList.remove('pressing');
+      }
+      peekBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        startPeek(e.pointerId);
+      });
+      peekBtn.addEventListener('pointerup', endPeek);
+      peekBtn.addEventListener('pointercancel', endPeek);
+      peekBtn.addEventListener('pointerleave', endPeek);
+
+      saveBtn.addEventListener('click', runSave);
+
+      // Re-layout on resize (image display size changes → handle screen positions change)
+      window.addEventListener('resize', redraw);
+
+    })();
+  </script>
+
+</body>
+
+</html>

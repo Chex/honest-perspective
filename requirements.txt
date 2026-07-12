@@ -1,0 +1,7 @@
+opencv-python>=4.8
+numpy>=1.24
+Pillow>=10.0
+pillow-heif>=0.16
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
