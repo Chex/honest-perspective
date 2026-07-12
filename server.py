@@ -88,8 +88,8 @@ async def detect(
     mode_meta = None
     if mode == "auto":
         # Run all 3 modes ONCE; pick_best is now a thin selector on top.
-        # Expose every mode's result so the frontend's menu can show "应用
-        # 全面 95.4%" etc. without re-fetching.
+        # Expose every mode's result so the frontend's menu can show
+        # "Full correction 95.4%" etc. without re-fetching.
         all_results = auto_correct_all_modes(
             bgr,
             gravity=gravity,

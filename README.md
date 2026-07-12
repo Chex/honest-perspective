@@ -1,6 +1,6 @@
 # honest-perspective
 
-> Perspective correction that never invents a pixel — and would rather do nothing than guess.
+> Perspective correction that never invents scene content — and would rather do nothing than guess.
 
 [中文说明 →](README.zh.md)
 
@@ -8,7 +8,7 @@
 
 A prototype for fixing perspective distortion in photos. Same problem space as the perspective tools in Snapseed or Lightroom, with two deliberately honest constraints:
 
-- **Crop-only, never fill.** Every pixel in the output comes from the source image. No black borders, no content-aware fill, no AI-generated "fake background".
+- **Crop-only, never fill.** The warp is cropped to the valid source-image footprint. It resamples the source normally, but never fills missing regions with black borders, content-aware synthesis, or AI-generated "fake background".
 - **No correction beats a wrong correction.** Auto mode treats "leave the photo alone" as a first-class candidate, and picks it whenever the evidence isn't convincing.
 
 Especially useful for photos of buildings: the converging verticals from tilting the camera up or down can be straightened.
@@ -16,10 +16,13 @@ Especially useful for photos of buildings: the converging verticals from tilting
 ## Install
 
 ```bash
-pip install -r requirements.txt
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-Python **3.11** recommended.
+Python **3.11** is recommended. On Windows, activate the environment with `.venv\Scripts\activate` instead.
 
 If you get an error that `cv2.createLineSegmentDetector` doesn't exist, install `opencv-contrib-python` instead.
 
@@ -68,7 +71,7 @@ Supports JPG / PNG / **HEIC** (iPhone's "High Efficiency" format, decoded server
 - The auto pick is shown by default; "no change" is a first-class candidate you can also select manually
 - **Drag** re-aims the camera: horizontal displacement is pure yaw, vertical displacement is pure pitch. A one-finger drag never introduces roll, and the same gesture means the same thing no matter where on the image it starts
 - **Hold the "original" button** to peek at the uncorrected source; release to return
-- **Save**: on iOS via the Web Share API (choose "Save to Photos"); on desktop as a JPG download. EXIF (capture time, camera, GPS, lens) and the ICC profile are preserved
+- **Save**: on desktop as a JPG download. On iOS, HTTPS enables the Web Share API and its "Save to Photos" action; the plain-HTTP LAN URL above falls back to a download, which Safari normally saves to Files. EXIF (capture time, camera, GPS, lens) and the ICC profile are preserved
 - The preview is downscaled in the browser to ~`max(viewport) × DPR` (capped at 2500px) so `matrix3d` stays at 60fps on large photos; saving always uses the full-resolution original
 
 ### The math behind manual correction
@@ -78,7 +81,7 @@ Manual mode is a **strict camera-rotation model**. The authoritative state is no
 1. `intrinsics`: K computed from EXIF `FocalLengthIn35mmFilm` when present, falling back to `max(w, h)`
 2. `rotation`: a 3×3 matrix on SO(3) (`RᵀR = I`, `det R = 1`)
 3. `crop`: a same-aspect crop inside the rotated source quad, uniform scaling only
-4. Final warp = `S_crop · K · R · K⁻¹` — by construction it cannot introduce shear or non-uniform scaling
+4. Final warp = `S_crop · K · R · K⁻¹` — there are no independent arbitrary-shear or non-uniform-scale controls; every projective change comes from a physically valid camera rotation
 
 A drag computes `yaw = atan(dx / fx)` and `pitch = -atan(dy / fy)` from the pose at pointer-down, then composes on SO(3). A two-dimensional gesture drives exactly two camera axes; no roll is mixed in to make a corner track the finger, which is why the gesture is position-independent.
 
@@ -122,8 +125,8 @@ The project parses that vector, maps it into image coordinates according to devi
 
 | Scenario | LSD + RANSAC | Gravity prior |
 |---|---|---|
-| Buildings | ✅ works | ✅ more accurate |
-| Pyramids / cups / sculpture | ❌ no solution | ✅ gives the true tilt directly |
+| Buildings | ✅ works | ✅ independent orientation estimate |
+| Pyramids / cups / sculpture | ❌ no solution | ✅ can estimate tilt without visible lines |
 | Forests / weak structure | ⚠️ confidently wrong | ✅ doesn't depend on segments |
 | Lens distortion | not corrected | not corrected |
 | Screenshots / no EXIF | works | no data → falls back to LSD |
@@ -131,6 +134,14 @@ The project parses that vector, maps it into image coordinates according to devi
 A GeoCalib cross-check on 9 samples showed most images agree with Apple's gravity within ~1.7°, but two conflicted by 5.6° and 9.4° even with a healthy norm. So the plan is *not* "gravity overrides visual VPs" — it's three estimators (Apple gravity, visual VPs, GeoCalib) each producing proposals with confidence, defaulting to no-change on conflict. See `spike_geocalib/FINDINGS.md`.
 
 The `spike_*/FINDINGS.md` files document the research behind these decisions, including the dead ends.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Node.js is required for the browser/backend geometry contract tests.
 
 ## Color
 

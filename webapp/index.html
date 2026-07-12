@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <title>Perspective Fix</title>
+  <title>Honest Perspective</title>
   <style>
     :root {
       --bg: #0a0a0a;
@@ -435,7 +435,7 @@
   <!-- Drop zone -->
   <label class="dropzone" id="dropzone">
     <div class="icon">↓</div>
-    <div class="primary">拖入照片，或点击选择</div>
+    <div class="primary">Drop a photo, or tap to choose</div>
     <div class="hint">JPG · HEIC · PNG</div>
     <input type="file" id="fileInput" accept="image/jpeg,image/png,image/heic,image/heif">
   </label>
@@ -450,42 +450,44 @@
         <line x1="0" y1="33.333" x2="100" y2="33.333" />
         <line x1="0" y1="66.666" x2="100" y2="66.666" />
       </svg>
-      <div class="busy-veil"><span class="spinner"></span><span id="veilText">正在处理…</span></div>
+      <div class="busy-veil"><span class="spinner"></span><span id="veilText">Processing…</span></div>
     </div>
   </div>
 
   <div class="bottom-bar" id="bottomBar" hidden>
     <div class="bottom-controls">
-      <button class="round-btn" id="newImgBtn" title="换一张图">+</button>
-      <button class="info-pill" id="statusPill" type="button" title="点击恢复自动校正">
-        <span id="statusText">等待检测…</span>
+      <button class="round-btn" id="newImgBtn" title="Open another photo">+</button>
+      <button class="info-pill" id="statusPill" type="button" title="Choose correction mode">
+        <span id="statusText">Waiting for detection…</span>
       </button>
-      <button class="round-btn peek" id="peekBtn" title="按住显示原图">原图</button>
-      <button class="round-btn primary" id="saveBtn" title="保存">↓</button>
+      <button class="round-btn peek" id="peekBtn" title="Hold to show the original" aria-label="Hold to show the original">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="round-btn primary" id="saveBtn" title="Save">↓</button>
     </div>
   </div>
 
   <div class="menu-backdrop" id="menuBackdrop"></div>
-  <div class="menu-sheet" id="menuSheet" role="dialog" aria-label="选择校正方式">
+  <div class="menu-sheet" id="menuSheet" role="dialog" aria-label="Choose correction mode">
     <button class="menu-item" id="menuAuto" data-mode="auto">
-      <span>重新自动校正</span>
+      <span>Auto correction</span>
       <span class="meta" data-meta="auto"></span>
     </button>
     <div class="menu-divider"></div>
     <button class="menu-item" id="menuNone" data-mode="none">
-      <span>无需调整</span>
+      <span>No correction</span>
       <span class="meta" data-meta="none"></span>
     </button>
     <button class="menu-item" id="menuBoth" data-mode="both">
-      <span>应用全面校正</span>
+      <span>Full correction</span>
       <span class="meta" data-meta="both"></span>
     </button>
     <button class="menu-item" id="menuVertical" data-mode="vertical">
-      <span>应用垂直校正</span>
+      <span>Vertical correction</span>
       <span class="meta" data-meta="vertical"></span>
     </button>
     <button class="menu-item" id="menuHorizontal" data-mode="horizontal">
-      <span>应用水平校正</span>
+      <span>Horizontal correction</span>
       <span class="meta" data-meta="horizontal"></span>
     </button>
   </div>
@@ -516,17 +518,17 @@
       const Geometry = window.PerspectiveGeometry;
 
       const MODE_LABEL = {
-        none: '无需校正',
-        both: '全面',
-        vertical: '垂直',
-        horizontal: '水平',
+        none: 'No correction',
+        both: 'Full',
+        vertical: 'Vertical',
+        horizontal: 'Horizontal',
       };
       // Three mutually-reinforcing safety valves for the manual drag path.
       // Tighter values = more conservative (more drags rejected before
       // hitting visually weird states). The numbers below were picked by
       // taste, not derived — adjust if `window.__rejectStats` shows one is
-      // doing all the work or another never fires. See README "手动校正
-      // 背后的数学" section for the role each plays.
+      // doing all the work or another never fires. See the README section
+      // "The math behind manual correction" for the role each plays.
       //
       // This is now a real camera angle because K comes from EXIF when present.
       const MAX_ROT_RAD = 35 * Math.PI / 180;
@@ -568,7 +570,7 @@
       // Single blocking-state primitive. Both auto-detect and save go through
       // here. The veil over the image is the only progress indicator — the
       // pill keeps showing the last-settled result text (dimmed via :disabled),
-      // and toast is reserved for terminal feedback (errors, "已下载").
+      // and toast is reserved for terminal feedback (errors, "Downloaded").
       function setBusy(b, label) {
         busy = b;
         saveBtn.disabled = b;
@@ -576,7 +578,7 @@
         statusPill.disabled = b;
         peekBtn.disabled = b;
         if (b) {
-          veilText.textContent = label || '正在处理…';
+          veilText.textContent = label || 'Processing…';
           stage.classList.add('busy');
         } else {
           stage.classList.remove('busy');
@@ -591,9 +593,9 @@
         if (state === 'success') {
           const label = MODE_LABEL[mode] || mode || '';
           if (mode === 'none') {
-            statusText.innerHTML = `<span class="mode">${label}</span> · 保留原图`;
+            statusText.innerHTML = `<span class="mode">${label}</span> · original kept`;
           } else {
-            statusText.innerHTML = `已完成 <span class="mode">${label}</span> 自动校正`;
+            statusText.innerHTML = `Auto-corrected: <span class="mode">${label}</span>`;
           }
         } else {
           // Detection is deterministic (seeded RANSAC) — re-running on the
@@ -601,7 +603,7 @@
           // "click to retry", point the user to the only thing that
           // actually moves forward: dragging the image manually.
           statusPill.classList.add('warn');
-          statusText.innerHTML = `<span class="mode">未检测到</span> · 拖动画面手动调整`;
+          statusText.innerHTML = `<span class="mode">Nothing detected</span> · drag to adjust`;
         }
       }
 
@@ -954,7 +956,7 @@
         const R = solveCameraRotation(userLocal, objectAspect, K);
         if (!R) { rejectStats.degenerate++; return false; }
 
-        // Rotation magnitude check — see README "手动校正背后的数学"
+        // Rotation magnitude check — see README "The math behind manual correction"
         const traceR = R[0] + R[4] + R[8];
         const cosTheta = Math.max(-1, Math.min(1, (traceR - 1) / 2));
         const thetaRad = Math.acos(cosTheta);
@@ -1090,7 +1092,7 @@
         // Reset per-image state so the previous photo's pill text /
         // alternatives / applied-mode don't linger while detect runs.
         statusPill.classList.remove('warn');
-        statusText.textContent = '等待检测…';
+        statusText.textContent = 'Waiting for detection…';
         chosenMode = null;
         appliedMode = null;
         alternatives = null;
@@ -1100,7 +1102,7 @@
         if (lastPreviewURL) URL.revokeObjectURL(lastPreviewURL);
         const result = await makePreviewURL(file);
         if (!result) {
-          toast('这个浏览器无法预览该格式。试试 Safari，或换 JPG/PNG。', 4000);
+          toast("This browser can't preview this format. Try Safari, or use JPG/PNG.", 4000);
           return;
         }
         lastPreviewURL = result.url;
@@ -1111,7 +1113,7 @@
             sourceImg.onerror = reject;
           });
         } catch {
-          toast('图片加载失败');
+          toast('Failed to load the image');
           return;
         }
         // Show the raw source IMMEDIATELY (no matrix3d yet). Detect runs while
@@ -1140,7 +1142,7 @@
       // BACKEND CALLS
       // ──────────────────────────────────────────────────────────
       async function runDetect() {
-        setBusy(true, '自动检测中…');
+        setBusy(true, 'Detecting…');
         try {
           const fd = new FormData();
           fd.append('file', currentFile);
@@ -1179,7 +1181,7 @@
           redraw();
         } catch (e) {
           setStatus('failed');
-          toast(`检测失败：${e.message}`);
+          toast(`Detection failed: ${e.message}`);
         } finally {
           setBusy(false);
         }
@@ -1187,7 +1189,7 @@
 
       async function runSave() {
         if (!currentFile || !sourceCorners) return;
-        setBusy(true, '生成中…');
+        setBusy(true, 'Rendering…');
         try {
           const fd = new FormData();
           fd.append('file', currentFile);
@@ -1206,7 +1208,7 @@
           const fileObj = new File([blob], filename, { type: 'image/jpeg' });
 
           // On iOS only, route through navigator.share — opens the system
-          // share sheet where the user can pick "存储到照片". Desktop Safari
+          // share sheet where the user can pick "Save to Photos". Desktop Safari
           // also implements Web Share, but there it would yield an action
           // menu instead of a plain download, which is the opposite of what
           // a desktop user wants. So UA-gate the share path to iOS.
@@ -1214,7 +1216,7 @@
           // Caveat: navigator.share on iOS requires a secure context. On a
           // LAN deployment served over plain HTTP (http://192.168.x.x:8000),
           // canShare returns false and we fall back to download — which on
-          // iOS Safari opens "保存到文件" instead of "存储到照片". Real fix
+          // iOS Safari opens "Save to Files" instead of "Save to Photos". Real fix
           // is HTTPS (self-signed cert + trust on device); deferred.
           const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
@@ -1230,7 +1232,7 @@
             downloadBlob(blob, filename);
           }
         } catch (e) {
-          toast(`保存失败：${e.message}`);
+          toast(`Save failed: ${e.message}`);
         } finally {
           setBusy(false);
         }
@@ -1245,7 +1247,7 @@
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 2000);
-        toast('已下载');
+        toast('Downloaded');
       }
 
       function redraw() {
@@ -1393,8 +1395,8 @@
         }
         activePointerId = null;
         // Drag ended → pill is no longer on any auto/menu mode. Show
-        // neutral metrics ("倾斜 X° · 像素 Y%") instead of the misleading
-        // "已完成 X 自动校正" text that implied a specific mode is active.
+        // neutral metrics ("tilt X°") instead of the misleading
+        // "Auto-corrected: X" text that implied a specific mode is active.
         // The pill stays clickable to invite re-opening the menu.
         updatePillForManualState();
         validateCurrentCorners();
@@ -1408,9 +1410,9 @@
         statusPill.classList.remove('warn');
         if (lastPhysics && lastPhysics.theta_deg != null) {
           const theta = lastPhysics.theta_deg.toFixed(1);
-          statusText.innerHTML = `手动调整 · <span class="mode">倾斜 ${theta}°</span>`;
+          statusText.innerHTML = `Manual · <span class="mode">tilt ${theta}°</span>`;
         } else {
-          statusText.textContent = '手动调整';
+          statusText.textContent = 'Manual adjustment';
         }
       }
       imageTarget.addEventListener('pointerup', endDrag);
@@ -1448,7 +1450,7 @@
           if (!alt) continue;
           if (alt.reason || !alt.corners) {
             // Not viable — show the reason as warn-colored meta
-            metaEl.textContent = alt.reason || 'VP 缺失';
+            metaEl.textContent = alt.reason || 'no vanishing point';
             metaEl.classList.add('warn');
             continue;
           }
@@ -1457,7 +1459,7 @@
           metaEl.textContent = `${(alt.area_ratio * 100).toFixed(1)}%`;
           if (mode === appliedMode) {
             item.classList.add('current');
-            metaEl.textContent += ' · 当前';
+            metaEl.textContent += ' · current';
           }
         }
         // "Auto" item: enabled iff we have a detected winner; marked current
@@ -1469,7 +1471,7 @@
         const autoMeta = autoItem.querySelector('[data-meta]');
         autoMeta.classList.remove('warn');
         autoMeta.textContent = (appliedMode === 'auto' && chosenMode)
-          ? `${MODE_LABEL[chosenMode] || chosenMode} · 当前`
+          ? `${MODE_LABEL[chosenMode] || chosenMode} · current`
           : '';
         menuSheet.classList.add('open');
         menuBackdrop.classList.add('open');

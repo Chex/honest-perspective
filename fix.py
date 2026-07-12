@@ -45,7 +45,7 @@ STRAIGHTNESS_IMPROVEMENT_DEG = 0.25
 MIN_VP_WEIGHTED_INLIER_RATIO = 0.50
 MAX_GRAVITY_VISUAL_AUTO_ANGLE_DEG = 8.0
 
-# Optional HEIC support — iPhone "高效率" format. Web app expects this; CLI
+# Optional HEIC support — iPhone "High Efficiency" format. Web app expects this; CLI
 # works without it for JPG/PNG.
 try:
     from pillow_heif import register_heif_opener
@@ -633,7 +633,7 @@ def _compute_homography(bgr, mode, gravity=None, gravity_mode="auto", intrinsics
     nowadays pick_best runs all three modes independently, so a "both"
     that secretly degrades to horizontal is redundant with the horizontal
     candidate already in the list — and worse, it lies about what
-    actually ran. When a user explicitly picks "应用全面校正" from the
+    actually ran. When a user explicitly picks "Full correction" from the
     menu, they mean both-axes-corrected, not "any correction that fits."
 
     Returns (H, mode, meta) on success or (None, None, meta) on failure.
@@ -763,7 +763,7 @@ def auto_correct(bgr, mode="vertical", strength=1.0, keep_aspect=True, gravity=N
         state = make_correction_state(rotation, intrinsics, [w, h])
     except ValueError as error:
         meta = dict(meta)
-        meta["reason"] = f"状态不可用: {error}"
+        meta["reason"] = f"invalid state: {error}"
         return bgr, None, None, meta
     physics = validate_correction_state(state, [w, h], max_rotation_deg=MAX_CAMERA_ROT_DEG)
     meta = dict(meta)
@@ -778,7 +778,7 @@ def auto_correct(bgr, mode="vertical", strength=1.0, keep_aspect=True, gravity=N
     meta["physics"] = {key: value for key, value in physics.items() if key != "view"}
     meta["state"] = state
     if not physics["accepted"]:
-        meta["reason"] = physics["reason"] or "超出安全姿态范围"
+        meta["reason"] = physics["reason"] or "beyond safe rotation range"
         return bgr, None, None, meta
     cropped = warp_with_state(bgr, state, max_rotation_deg=MAX_CAMERA_ROT_DEG)
     view_inv = np.linalg.inv(physics["view"]["matrix"])
@@ -805,10 +805,10 @@ def auto_correct_all_modes(bgr, strength=1.0, keep_aspect=True, gravity=None,
     }
 
     `reason` values:
-      None         → viable, use as-is
-      "VP 缺失"    → required vanishing point(s) not found
-      "矫正过激"   → output area > 105% source (wrong VP on noisy lines)
-      "保留过少"   → output area < 50% source (extreme foreshortening)
+      None                 → viable, use as-is
+      "no vanishing point" → required vanishing point(s) not found
+      "over-corrected"     → output area > 105% source (wrong VP on noisy lines)
+      "crops too much"     → output area < 50% source (extreme foreshortening)
     """
     source_area = bgr.shape[0] * bgr.shape[1]
     h, w = bgr.shape[:2]
@@ -861,16 +861,16 @@ def auto_correct_all_modes(bgr, strength=1.0, keep_aspect=True, gravity=None,
             results[m] = {
                 "cropped": None, "corners": None,
                 "area_ratio": None,
-                "reason": meta.get("reason") or "VP 缺失",
+                "reason": meta.get("reason") or "no vanishing point",
                 "meta": meta,
             }
             continue
         area_ratio = abs(cv2.contourArea(np.asarray(corners, dtype=np.float32))) / source_area
         reason = None
         if area_ratio > 1.05:
-            reason = "矫正过激"
+            reason = "over-corrected"
         elif area_ratio < 0.50:
-            reason = "保留过少"
+            reason = "crops too much"
         alignment = meta.get("alignment") or {}
         meta["quality"] = {
             "score_deg": alignment.get("after_deg"),
