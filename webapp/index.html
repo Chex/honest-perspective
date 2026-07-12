@@ -5,6 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>Honest Perspective</title>
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230a0a0a'/><path d='M26 74h48M50 24v34' stroke='%23ff9f43' stroke-width='9' stroke-linecap='round'/><circle cx='50' cy='64' r='8' fill='%23ff9f43'/></svg>">
   <style>
     :root {
       --bg: #0a0a0a;
@@ -141,6 +143,22 @@
       background: rgba(255, 159, 67, 0.04);
       color: var(--text);
       border-color: var(--accent);
+    }
+
+    .dropzone .brand {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.2px;
+    }
+
+    .dropzone .tagline {
+      font-size: 13px;
+      color: var(--text-dim);
+      text-align: center;
+      max-width: 340px;
+      line-height: 1.5;
+      margin: -8px 24px 12px;
     }
 
     .dropzone .icon {
@@ -434,6 +452,8 @@
 
   <!-- Drop zone -->
   <label class="dropzone" id="dropzone">
+    <div class="brand">Honest Perspective</div>
+    <div class="tagline">Crop-only perspective correction — every output pixel comes from your photo. Auto-corrects when it's sure; drag to re-aim the camera yourself.</div>
     <div class="icon">↓</div>
     <div class="primary">Drop a photo, or tap to choose</div>
     <div class="hint">JPG · HEIC · PNG</div>
@@ -515,6 +535,7 @@
       let displaySize = null;         // [w, h] in CSS pixels of the target rectangle
       let lastPhysics = null;         // frontend diagnostics for comparing with /validate
       let busy = false;
+      let dragHintShown = false;      // one drag-gesture hint per page load
       const Geometry = window.PerspectiveGeometry;
 
       const MODE_LABEL = {
@@ -1179,6 +1200,13 @@
           objectAspect = aspectFromCorners(detectedCorners);
           setStatus(data.detected ? 'success' : 'failed', data.mode);
           redraw();
+          // The drag gesture is otherwise invisible — surface it once per
+          // visit. The failure pill already says "drag to adjust", so only
+          // hint on success.
+          if (data.detected && !dragHintShown) {
+            dragHintShown = true;
+            toast('Drag anywhere on the photo to re-aim the camera', 2600);
+          }
         } catch (e) {
           setStatus('failed');
           toast(`Detection failed: ${e.message}`);
