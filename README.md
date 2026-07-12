@@ -4,7 +4,7 @@
 
 [中文说明 →](README.zh.md)
 
-<!-- TODO: demo GIF goes here -->
+![Original street photo transitioning to automatic vertical perspective correction](docs/assets/demo.gif)
 
 A prototype for fixing perspective distortion in photos. Same problem space as the perspective tools in Snapseed or Lightroom, with two deliberately honest constraints:
 
