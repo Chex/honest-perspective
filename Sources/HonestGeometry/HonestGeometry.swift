@@ -352,6 +352,15 @@ func cropInsideQuad(_ crop: Crop, quad: [SIMD2<Double>], tolerance: Double = 1e-
 
 // MARK: - View
 
+/// Apply a homography to a point (JS `apply`, Python `_apply_homography`).
+public func applyHomography(_ matrix: Matrix3, to point: SIMD2<Double>) throws -> SIMD2<Double> {
+    let mapped = matrix * SIMD3(point.x, point.y, 1.0)
+    guard abs(mapped.z) >= 1e-9 else {
+        throw GeometryError.degenerate("projection crosses infinity")
+    }
+    return SIMD2(mapped.x / mapped.z, mapped.y / mapped.z)
+}
+
 public struct ViewResult: Sendable {
     /// Fixed-size warp: framing * homography.
     public let matrix: Matrix3
