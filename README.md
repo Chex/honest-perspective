@@ -6,10 +6,11 @@
 
 ![Original street photo transitioning to automatic vertical perspective correction](docs/assets/demo.gif)
 
-A prototype for fixing perspective distortion in photos. Same problem space as the perspective tools in Snapseed or Lightroom, with two deliberately honest constraints:
+A prototype for fixing perspective distortion in photos. Same problem space as the perspective tools in Snapseed or Lightroom, with three deliberately honest constraints:
 
 - **Crop-only, never fill.** The warp is cropped to the valid source-image footprint. It resamples the source normally, but never fills missing regions with black borders, content-aware synthesis, or AI-generated "fake background".
 - **No correction beats a wrong correction.** Auto mode treats "leave the photo alone" as a first-class candidate, and picks it whenever the evidence isn't convincing.
+- **Move the camera, don't stretch the scene.** Manual mode is constrained to physically valid camera rotations, same-aspect cropping, and uniform scaling. It never uses arbitrary shear or non-uniform stretching just to make the image look straighter.
 
 Especially useful for photos of buildings: the converging verticals from tilting the camera up or down can be straightened.
 
