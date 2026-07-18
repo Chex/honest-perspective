@@ -101,7 +101,7 @@ Manual mode is a **strict camera-rotation model**. The authoritative state is no
 
 A drag computes `yaw = atan(dx / fx)` and `pitch = -atan(dy / fy)` from the pose at pointer-down, then composes on SO(3). A two-dimensional gesture drives exactly two camera axes; no roll is mixed in to make a corner track the finger, which is why the gesture is position-independent.
 
-The frontend (`webapp/geometry.js`) and backend (`geometry.py`) are the same geometry contract; randomized-rotation contract tests compare matrices, crops, and angles across both implementations (`tests/test_geometry.py`). The save endpoint sends the correction state directly; a legacy corners API remains only as a compatibility path.
+The frontend (`webapp/geometry.js`), backend (`geometry.py`), and the Swift package (`Sources/HonestGeometry`, for future native apps) are the same geometry contract. All three verify against one set of checked-in test vectors generated from the Python reference (`tests/generate_geometry_fixtures.py` → `tests/HonestGeometryTests/Fixtures/geometry_contract.json`), comparing matrices, crops, and angles. The save endpoint sends the correction state directly; a legacy corners API remains only as a compatibility path.
 
 Two safety valves guard the manual path:
 
@@ -154,10 +154,11 @@ The `spike_*/FINDINGS.md` files document the research behind these decisions, in
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v   # Python + browser contract tests (needs Node.js)
+swift test                                # Swift geometry package against the same fixtures
 ```
 
-Node.js is required for the browser/backend geometry contract tests.
+After changing the geometry contract, regenerate the shared fixtures with `python tests/generate_geometry_fixtures.py` (a test fails if they go stale).
 
 ## Color
 

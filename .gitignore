@@ -14,5 +14,9 @@ __pycache__/
 .venv/
 venv/
 
+# Swift
+.build/
+.swiftpm/
+
 # macOS
 .DS_Store

@@ -2,6 +2,7 @@ import json
 import math
 from pathlib import Path
 import subprocess
+import sys
 import unittest
 
 import cv2
@@ -20,6 +21,10 @@ from geometry import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURES_PATH = ROOT / "tests" / "HonestGeometryTests" / "Fixtures" / "geometry_contract.json"
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import generate_geometry_fixtures  # noqa: E402
 
 
 class GeometryTests(unittest.TestCase):
@@ -55,53 +60,6 @@ class GeometryTests(unittest.TestCase):
         source = np.full((size[1], size[0]), 255, dtype=np.uint8)
         output = cv2.warpPerspective(source, validation["view"]["matrix"], tuple(size))
         self.assertGreaterEqual(int(output.min()), 250)
-
-    def test_browser_and_backend_geometry_match(self):
-        rng = np.random.default_rng(20260710)
-        fixtures = []
-        python_results = []
-        for _ in range(24):
-            width, height = 800, 600
-            intrinsics = make_intrinsics(width, height, focal_35mm=float(rng.choice([24, 26, 35, 52])))
-            vector = np.radians(rng.uniform(-12, 12, size=3))
-            rotation = rotation_from_vector(vector)
-            fixtures.append({
-                "rotation": rotation.reshape(-1).tolist(),
-                "intrinsics": intrinsics,
-                "imageSize": [width, height],
-            })
-            result = compute_view(rotation, intrinsics, [width, height])
-            python_results.append(result)
-
-        script = """
-const fs = require('fs');
-const geometry = require('./webapp/geometry.js');
-const fixtures = JSON.parse(fs.readFileSync(0, 'utf8'));
-const results = fixtures.map(f => geometry.computeView(
-  f.rotation, f.intrinsics, f.imageSize
-));
-process.stdout.write(JSON.stringify(results));
-"""
-        completed = subprocess.run(
-            ["node", "-e", script],
-            cwd=ROOT,
-            input=json.dumps(fixtures),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        browser_results = json.loads(completed.stdout)
-        for python_result, browser_result in zip(python_results, browser_results):
-            np.testing.assert_allclose(
-                python_result["matrix"].reshape(-1), browser_result["matrix"],
-                rtol=1e-10, atol=1e-10
-            )
-            np.testing.assert_allclose(
-                python_result["crop"], browser_result["crop"], rtol=1e-10, atol=1e-10
-            )
-            self.assertAlmostEqual(
-                python_result["theta_deg"], browser_result["thetaDeg"], places=9
-            )
 
     def test_manual_drag_maps_screen_axes_to_camera_pitch_and_yaw(self):
         script = r"""
@@ -178,6 +136,105 @@ process.stdout.write(JSON.stringify(results));
                 result["maxStepDeg"],
                 1.0,
                 f'{result["name"]} {result["displacement"]} was discontinuous',
+            )
+
+
+class GeometryContractFixtureTests(unittest.TestCase):
+    """Python, JS, and Swift all verify against the same checked-in fixtures.
+
+    The Swift side runs via `swift test`; regenerate the fixtures with
+    `python tests/generate_geometry_fixtures.py` after contract changes.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fixtures = json.loads(FIXTURES_PATH.read_text())
+
+    def assert_deep_close(self, actual, expected, path="$"):
+        if isinstance(expected, dict):
+            self.assertIsInstance(actual, dict, path)
+            self.assertEqual(sorted(actual), sorted(expected), path)
+            for key in expected:
+                self.assert_deep_close(actual[key], expected[key], f"{path}.{key}")
+        elif isinstance(expected, list):
+            self.assertIsInstance(actual, list, path)
+            self.assertEqual(len(actual), len(expected), path)
+            for index, (a, b) in enumerate(zip(actual, expected)):
+                self.assert_deep_close(a, b, f"{path}[{index}]")
+        elif isinstance(expected, float):
+            np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12, err_msg=path)
+        else:
+            self.assertEqual(actual, expected, path)
+
+    def test_fixture_file_matches_generator(self):
+        # Catches contract edits whose fixtures were not regenerated.
+        self.assert_deep_close(generate_geometry_fixtures.build_fixtures(), self.fixtures)
+
+    def test_python_reference_matches_fixtures(self):
+        for case in self.fixtures["makeIntrinsics"]:
+            intrinsics = make_intrinsics(case["width"], case["height"], focal_35mm=case["focal35mm"])
+            expected = dict(case["expected"])
+            self.assertEqual(intrinsics["source"], expected.pop("source"))
+            self.assertEqual(intrinsics["focal_35mm"], expected.pop("focal35mm"))
+            for key, value in expected.items():
+                self.assertAlmostEqual(intrinsics[key], value, places=9, msg=key)
+        for case in self.fixtures["computeView"]:
+            view = compute_view(
+                np.asarray(case["rotation"]).reshape(3, 3),
+                case["intrinsics"],
+                case["imageSize"],
+                crop=case.get("crop"),
+            )
+            expected = case["expected"]
+            np.testing.assert_allclose(
+                view["matrix"].reshape(-1), expected["matrix"], rtol=1e-10, atol=1e-10
+            )
+            np.testing.assert_allclose(view["crop"], expected["crop"], rtol=1e-10, atol=1e-10)
+            np.testing.assert_allclose(
+                view["canonical_crop"], expected["canonicalCrop"], rtol=1e-10, atol=1e-10
+            )
+            self.assertAlmostEqual(view["theta_deg"], expected["thetaDeg"], places=9)
+            self.assertAlmostEqual(
+                view["projective_w_ratio"], expected["projectiveWRatio"], places=9
+            )
+        for case in self.fixtures["interpolate"]:
+            interpolated = interpolate_rotation(
+                np.asarray(case["rotation"]).reshape(3, 3), case["strength"]
+            )
+            np.testing.assert_allclose(
+                interpolated.reshape(-1), case["expectedRotation"], rtol=1e-10, atol=1e-10
+            )
+
+    def test_browser_matches_fixtures(self):
+        completed = subprocess.run(
+            ["node", str(ROOT / "tests" / "browser_contract_runner.js"), str(FIXTURES_PATH)],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        results = json.loads(completed.stdout)
+        for case, view in zip(self.fixtures["computeView"], results["computeView"]):
+            expected = case["expected"]
+            np.testing.assert_allclose(view["matrix"], expected["matrix"], rtol=1e-10, atol=1e-10)
+            np.testing.assert_allclose(
+                view["homography"], expected["homography"], rtol=1e-10, atol=1e-10
+            )
+            np.testing.assert_allclose(view["crop"], expected["crop"], rtol=1e-10, atol=1e-10)
+            np.testing.assert_allclose(
+                view["canonicalCrop"], expected["canonicalCrop"], rtol=1e-10, atol=1e-10
+            )
+            np.testing.assert_allclose(
+                view["transformedCorners"], expected["transformedCorners"],
+                rtol=1e-10, atol=1e-10,
+            )
+            self.assertAlmostEqual(view["thetaDeg"], expected["thetaDeg"], places=9)
+            self.assertAlmostEqual(
+                view["projectiveWRatio"], expected["projectiveWRatio"], places=9
+            )
+        for case, rotation in zip(self.fixtures["drag"], results["drag"]):
+            np.testing.assert_allclose(
+                rotation, case["expectedRotation"], rtol=1e-10, atol=1e-10
             )
 
 
